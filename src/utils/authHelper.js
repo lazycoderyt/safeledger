@@ -9,14 +9,18 @@ import {
   signOut,
   updateProfile,
 } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, serverTimestamp, writeBatch } from "firebase/firestore";
 import { auth, db } from "@/libs/firebase";
 import { generateUSAccountNumber } from "@/utils/Cryptogenacc";
 
 /**
- * Registers a new user, provisions an institutional account number, and
- * writes their full KYC-style profile document to Firestore under
- * `profiles/{uid}`.
+ * Registers a new user, then atomically provisions both their KYC-style
+ * profile document (`profiles/{uid}`) and their core financial ledger
+ * account (`accounts/{uid}`) via a single Firestore write batch.
+ *
+ * The batch guarantees a user can never end up with a profile and no
+ * accompanying account document (or vice versa) — either both writes
+ * land, or neither does.
  *
  * @param {string} email
  * @param {string} password
@@ -57,7 +61,10 @@ export async function signUpUser(email, password, profile) {
     }
   }
 
-  await setDoc(doc(db, "profiles", user.uid), {
+  const batch = writeBatch(db);
+
+  const profileRef = doc(db, "profiles", user.uid);
+  batch.set(profileRef, {
     userId: user.uid,
     name: fullName,
     email,
@@ -71,6 +78,26 @@ export async function signUpUser(email, password, profile) {
     avatarUrl: "",
     role: "user",
   });
+
+  const accountRef = doc(db, "accounts", user.uid);
+  batch.set(accountRef, {
+    userId: user.uid,
+    accountNumber,
+    availableBalance: 0.0,
+    ledgerBalance: 0.0,
+    currency: "USD",
+    status: "active",
+    metrics: {
+      totalDebitsCount: 0,
+      totalCreditsCount: 0,
+      failedTransactionsCount: 0,
+    },
+    updatedAt: serverTimestamp(),
+  });
+
+  // Atomic — either both the profile and the account document are
+  // written, or neither is.
+  await batch.commit();
 
   return { user, accountNumber };
 }
