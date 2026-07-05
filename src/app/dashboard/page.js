@@ -23,9 +23,11 @@ export default function DashboardController() {
     // 2. Perform lightning-fast client-side redirection using state memory
     if (profile?.role === "admin") {
       router.replace("/dashboard/admin");
+      return;
     } else {
       // Defaults straight to standard user path if role is "user" or undefined
       router.replace("/dashboard/user");
+      return;
     }
   }, [user, profile, loading, router]);
 

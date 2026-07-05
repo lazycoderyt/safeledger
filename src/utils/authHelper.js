@@ -26,6 +26,7 @@ import {
   generateCardDetails,
 } from "@/utils/Cryptogenacc";
 import { calculateMonthlyPayment } from "@/utils/loanCalculations";
+import { setSessionCookie, clearSessionCookie } from "@/utils/session";
 
 /**
  * Registers a new user, then atomically provisions both their KYC-style
@@ -63,6 +64,11 @@ export async function signUpUser(email, password, profile) {
     password,
   );
   const user = credential.user;
+
+  // Same reasoning as loginUser: set the cookie synchronously here so any
+  // immediate post-signup navigation to /dashboard doesn't race middleware.
+  const token = await user.getIdToken();
+  setSessionCookie(token);
 
   const accountNumber = generateUSAccountNumber();
 
@@ -125,6 +131,12 @@ export async function signUpUser(email, password, profile) {
  */
 export async function loginUser(email, password) {
   const credential = await signInWithEmailAndPassword(auth, email, password);
+  // Set the routing cookie NOW, synchronously in this call, so it exists
+  // before the caller does router.push("/dashboard") — otherwise that
+  // navigation can reach middleware before AuthContext's async
+  // onIdTokenChanged listener has had a chance to write it.
+  const token = await credential.user.getIdToken();
+  setSessionCookie(token);
   return credential.user;
 }
 
@@ -135,6 +147,7 @@ export async function loginUser(email, password) {
  */
 export async function logoutUser() {
   await signOut(auth);
+  clearSessionCookie();
 }
 
 /**
@@ -420,6 +433,99 @@ export async function approveLoanApplication(loanId, decision) {
     status: "Active",
     originationDate: serverTimestamp(),
     nextPaymentDate,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+const ACCOUNT_NUMBER_PATTERN = /^[1-9]\d{9,11}$/; // 10-12 digits, no leading zero
+
+/**
+ * Admin action: updates a user's display name and/or account number.
+ * Only the fields actually provided are written. When the account
+ * number changes, `profiles/{uid}.accountNumber` and
+ * `accounts/{uid}.accountNumber` are updated together in one batch so
+ * the two documents can never disagree about what the account number is.
+ *
+ * @param {string} userId
+ * @param {Object} updates
+ * @param {string} [updates.name] - New display name.
+ * @param {string} [updates.accountNumber] - New account number, 10-12
+ *   digits, matching the same format generateUSAccountNumber() produces.
+ * @returns {Promise<void>}
+ */
+export async function updateUserIdentity(userId, updates) {
+  if (!userId) throw new Error("updateUserIdentity requires a userId.");
+
+  const { name, accountNumber } = updates || {};
+  const trimmedName = typeof name === "string" ? name.trim() : undefined;
+  const trimmedAccountNumber =
+    typeof accountNumber === "string" ? accountNumber.trim() : undefined;
+
+  if (trimmedName === undefined && trimmedAccountNumber === undefined) {
+    throw new Error("updateUserIdentity requires a name or accountNumber.");
+  }
+  if (trimmedName !== undefined && trimmedName.length === 0) {
+    throw new Error("Name cannot be empty.");
+  }
+  if (
+    trimmedAccountNumber !== undefined &&
+    !ACCOUNT_NUMBER_PATTERN.test(trimmedAccountNumber)
+  ) {
+    throw new Error(
+      "Account number must be 10-12 digits with no leading zero.",
+    );
+  }
+
+  const batch = writeBatch(db);
+
+  const profileRef = doc(db, "profiles", userId);
+  const profileUpdates = { updatedAt: serverTimestamp() };
+  if (trimmedName !== undefined) profileUpdates.name = trimmedName;
+  if (trimmedAccountNumber !== undefined)
+    profileUpdates.accountNumber = trimmedAccountNumber;
+  batch.update(profileRef, profileUpdates);
+
+  if (trimmedAccountNumber !== undefined) {
+    const accountRef = doc(db, "accounts", userId);
+    batch.update(accountRef, {
+      accountNumber: trimmedAccountNumber,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  await batch.commit();
+}
+
+/**
+ * Admin action: grants or revokes admin access for a user by setting
+ * `profiles/{uid}.role`. Refuses to let an admin change their own role
+ * through this path — self-demotion (or a mis-click self-promotion)
+ * would either lock the acting admin out of the admin console or is
+ * simply not a legitimate use of this control, so it's rejected before
+ * any write happens.
+ *
+ * The caller is responsible for whatever confirmation UX it wants in
+ * front of this (e.g. a type-to-confirm phrase) — this function only
+ * enforces the two structural invariants: a valid role, and never
+ * self-targeting.
+ *
+ * @param {string} userId - The user whose role is changing.
+ * @param {"user"|"admin"} role - The role to set.
+ * @param {string} actingAdminUid - uid of the admin performing the change.
+ * @returns {Promise<void>}
+ */
+export async function updateUserRole(userId, role, actingAdminUid) {
+  if (!userId) throw new Error("updateUserRole requires a userId.");
+  if (role !== "user" && role !== "admin") {
+    throw new Error('updateUserRole: role must be "user" or "admin".');
+  }
+  if (actingAdminUid && actingAdminUid === userId) {
+    throw new Error("You can't change your own role.");
+  }
+
+  const profileRef = doc(db, "profiles", userId);
+  await updateDoc(profileRef, {
+    role,
     updatedAt: serverTimestamp(),
   });
 }
