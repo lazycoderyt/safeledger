@@ -426,7 +426,7 @@ export default function Navbar() {
     setLoggingOut(true);
     try {
       await logoutUser();
-      router.push("/login");
+      router.push("/");
     } catch (err) {
       console.error("Logout failed:", err);
     } finally {

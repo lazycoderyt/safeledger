@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
+import AdminNavbar from "@/components/admin/Adminnav";
 
 export default function AdminLayout({ children }) {
   const { profile, loading } = useAuth();
@@ -24,5 +25,14 @@ export default function AdminLayout({ children }) {
     );
   }
 
-  return profile?.role === "admin" ? <>{children}</> : null;
+  if (profile?.role !== "admin") return null;
+
+  return (
+    <>
+      <AdminNavbar />
+      <main className="md:pl-64 pt-14 md:pt-0 min-h-screen bg-slate-50">
+        {children}
+      </main>
+    </>
+  );
 }
