@@ -14,6 +14,7 @@ import {
   getDoc,
   setDoc,
   updateDoc,
+  addDoc,
   serverTimestamp,
   writeBatch,
   collection,
@@ -24,6 +25,7 @@ import {
   generateUSAccountNumber,
   generateCardDetails,
 } from "@/utils/Cryptogenacc";
+import { calculateMonthlyPayment } from "@/utils/loanCalculations";
 
 /**
  * Registers a new user, then atomically provisions both their KYC-style
@@ -304,4 +306,120 @@ export async function recordTransaction(userId, details) {
   });
 
   return { id: transactionRef.id, balanceAfter };
+}
+
+/**
+ * Submits a new loan or mortgage application to the root `loans`
+ * collection. Applications always start at "Pending Review" with no
+ * interest rate or monthly payment — those are only ever set once a
+ * real underwriting decision is made via `approveLoanApplication`.
+ * Nothing about pricing is fabricated at application time.
+ *
+ * @param {string} userId
+ * @param {Object} details
+ * @param {"institutional"|"mortgage"} details.loanType
+ * @param {string} details.purpose
+ * @param {number} details.principal - Amount requested.
+ * @param {number} details.termMonths - Requested term in months.
+ * @param {string} [details.propertyAddress] - Mortgage applications only.
+ * @param {number} [details.downPayment] - Mortgage applications only.
+ * @returns {Promise<string>} The new loan document's ID.
+ */
+export async function submitLoanApplication(userId, details) {
+  const {
+    loanType,
+    purpose,
+    principal,
+    termMonths,
+    propertyAddress = "",
+    downPayment = null,
+  } = details || {};
+
+  if (!userId) throw new Error("submitLoanApplication requires a userId.");
+  if (loanType !== "institutional" && loanType !== "mortgage") {
+    throw new Error(
+      'submitLoanApplication: loanType must be "institutional" or "mortgage".',
+    );
+  }
+  if (!purpose) throw new Error("submitLoanApplication requires a purpose.");
+  if (typeof principal !== "number" || principal <= 0) {
+    throw new Error(
+      "submitLoanApplication: principal must be a positive number.",
+    );
+  }
+  if (typeof termMonths !== "number" || termMonths <= 0) {
+    throw new Error(
+      "submitLoanApplication: termMonths must be a positive number.",
+    );
+  }
+
+  const loanRef = await addDoc(collection(db, "loans"), {
+    userId,
+    loanType,
+    purpose,
+    principal,
+    termMonths,
+    propertyAddress,
+    downPayment,
+    interestRate: null,
+    monthlyPayment: null,
+    remainingBalance: principal,
+    status: "Pending Review",
+    originationDate: null,
+    nextPaymentDate: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  return loanRef.id;
+}
+
+/**
+ * Underwriting/admin action: approves a pending loan or mortgage,
+ * computing its fixed monthly payment via standard amortization and
+ * moving it to Active. Not called from any user-facing UI yet — this
+ * is the write path an admin approval screen would call.
+ *
+ * @param {string} loanId
+ * @param {Object} decision
+ * @param {number} decision.interestRate - Annual rate, e.g. 6.5 for 6.5%.
+ * @param {number} [decision.termMonths] - Overrides the requested term if provided.
+ * @param {number} [decision.principal] - Overrides the requested principal if provided.
+ * @returns {Promise<void>}
+ */
+export async function approveLoanApplication(loanId, decision) {
+  if (!loanId) throw new Error("approveLoanApplication requires a loanId.");
+
+  const loanRef = doc(db, "loans", loanId);
+  const loanSnap = await getDoc(loanRef);
+  if (!loanSnap.exists()) throw new Error("Loan application not found.");
+  const loan = loanSnap.data();
+
+  const principal = decision?.principal ?? loan.principal;
+  const termMonths = decision?.termMonths ?? loan.termMonths;
+  const interestRate = decision?.interestRate;
+
+  if (typeof interestRate !== "number") {
+    throw new Error("approveLoanApplication requires a numeric interestRate.");
+  }
+
+  const monthlyPayment = calculateMonthlyPayment(
+    principal,
+    interestRate,
+    termMonths,
+  );
+  const nextPaymentDate = new Date();
+  nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+
+  await updateDoc(loanRef, {
+    principal,
+    termMonths,
+    interestRate,
+    monthlyPayment,
+    remainingBalance: principal,
+    status: "Active",
+    originationDate: serverTimestamp(),
+    nextPaymentDate,
+    updatedAt: serverTimestamp(),
+  });
 }

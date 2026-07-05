@@ -85,7 +85,7 @@ const NAV_BLOCKS = [
       },
       {
         label: "Active Mortgages",
-        href: "/dashboard/user/loans/mortgages",
+        href: "/dashboard/user/loans/mortages",
         icon: Home,
       },
     ],
