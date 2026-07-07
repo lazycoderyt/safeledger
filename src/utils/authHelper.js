@@ -28,6 +28,7 @@ import {
 } from "@/utils/Cryptogenacc";
 import { calculateMonthlyPayment } from "@/utils/loanCalculations";
 import { setSessionCookie, clearSessionCookie } from "@/utils/session";
+import { TRANSACTION_STATUS_PRESET_IDS } from "@/utils/transactionStatusPresets";
 
 /**
  * Registers a new user, then atomically provisions both their KYC-style
@@ -498,7 +499,7 @@ export async function rejectLoanApplication(loanId, adminUid, reason = "") {
   });
 }
 
-const ACCOUNT_NUMBER_PATTERN = /^[1-9]\d{9,11}$/; // 10-12 digits, no leading zero
+export const ACCOUNT_NUMBER_PATTERN = /^[1-9]\d{9,11}$/; // 10-12 digits, no leading zero
 
 /**
  * Admin action: updates a user's display name and/or account number.
@@ -934,5 +935,55 @@ export async function adminDeleteTransaction(transactionId) {
     });
 
     txn.delete(transactionRef);
+  });
+}
+
+/**
+ * Admin action: sets the single global transaction-status message shown
+ * to every user attempting a transfer (see
+ * utils/transactionStatusPresets.js for the resolver every reader uses).
+ * This is a singleton document — there is exactly one active message
+ * for the whole app at any time, not one per user.
+ *
+ * @param {string} adminUid - uid of the admin performing the change.
+ * @param {Object} details
+ * @param {string} details.presetId - One of TRANSACTION_STATUS_PRESET_IDS.
+ * @param {string} [details.customMessage] - Required (non-empty) when
+ *   presetId is "custom"; ignored otherwise.
+ * @param {boolean} details.blockTransfers - Whether transfers should
+ *   actually be prevented while this message is shown. Forced to
+ *   `false` when presetId is "none".
+ * @returns {Promise<void>}
+ */
+export async function setTransactionStatusMessage(adminUid, details) {
+  const { presetId, customMessage = "", blockTransfers } = details || {};
+
+  if (!TRANSACTION_STATUS_PRESET_IDS.includes(presetId)) {
+    throw new Error(
+      "setTransactionStatusMessage: presetId must be a known preset.",
+    );
+  }
+  if (typeof blockTransfers !== "boolean") {
+    throw new Error(
+      "setTransactionStatusMessage requires a boolean blockTransfers.",
+    );
+  }
+
+  const trimmedCustomMessage =
+    typeof customMessage === "string" ? customMessage.trim() : "";
+
+  if (presetId === "custom" && !trimmedCustomMessage) {
+    throw new Error(
+      "Enter a custom message, or choose one of the preset statuses instead.",
+    );
+  }
+
+  const statusRef = doc(db, "settings", "transactionStatus");
+  await setDoc(statusRef, {
+    presetId,
+    customMessage: presetId === "custom" ? trimmedCustomMessage : "",
+    blockTransfers: presetId === "none" ? false : blockTransfers,
+    updatedAt: serverTimestamp(),
+    updatedBy: adminUid || null,
   });
 }

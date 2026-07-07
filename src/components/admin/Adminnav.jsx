@@ -16,6 +16,7 @@ import {
   LogOut,
   Clock,
   HandCoins,
+  Megaphone,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/libs/firebase";
@@ -73,6 +74,16 @@ const NAV_BLOCKS = [
         label: "Loan Applications",
         href: "/dashboard/admin/loans",
         icon: HandCoins,
+      },
+    ],
+  },
+  {
+    label: "System",
+    items: [
+      {
+        label: "Transaction Status",
+        href: "/dashboard/admin/settings",
+        icon: Megaphone,
       },
     ],
   },
