@@ -409,12 +409,33 @@ export async function approveLoanApplication(loanId, decision) {
   if (!loanSnap.exists()) throw new Error("Loan application not found.");
   const loan = loanSnap.data();
 
+  // Approval is only meaningful once, from Pending Review. Guards against
+  // a stale tab double-submitting, or re-approving something already
+  // Active/Rejected and silently resetting its remaining balance.
+  if (loan.status !== "Pending Review") {
+    throw new Error(
+      `This application is "${loan.status}" and can no longer be approved.`,
+    );
+  }
+
   const principal = decision?.principal ?? loan.principal;
   const termMonths = decision?.termMonths ?? loan.termMonths;
   const interestRate = decision?.interestRate;
 
-  if (typeof interestRate !== "number") {
-    throw new Error("approveLoanApplication requires a numeric interestRate.");
+  if (typeof interestRate !== "number" || interestRate < 0) {
+    throw new Error(
+      "approveLoanApplication requires a non-negative numeric interestRate.",
+    );
+  }
+  if (typeof principal !== "number" || principal <= 0) {
+    throw new Error(
+      "approveLoanApplication: principal must be a positive number.",
+    );
+  }
+  if (typeof termMonths !== "number" || termMonths <= 0) {
+    throw new Error(
+      "approveLoanApplication: termMonths must be a positive number.",
+    );
   }
 
   const monthlyPayment = calculateMonthlyPayment(
@@ -434,6 +455,45 @@ export async function approveLoanApplication(loanId, decision) {
     status: "Active",
     originationDate: serverTimestamp(),
     nextPaymentDate,
+    rejectionReason: null,
+    decisionBy: decision?.adminUid || null,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * Underwriting/admin action: rejects a pending loan or mortgage
+ * application. Only valid from "Pending Review" — refuses to reject
+ * something already Active/Rejected/Paid Off so an admin can't
+ * accidentally flip a live loan to Rejected from a stale screen.
+ *
+ * @param {string} loanId
+ * @param {string} adminUid - uid of the admin performing the rejection.
+ * @param {string} [reason] - Optional note shown back to the applicant.
+ * @returns {Promise<void>}
+ */
+export async function rejectLoanApplication(loanId, adminUid, reason = "") {
+  if (!loanId) throw new Error("rejectLoanApplication requires a loanId.");
+
+  const loanRef = doc(db, "loans", loanId);
+  const loanSnap = await getDoc(loanRef);
+  if (!loanSnap.exists()) throw new Error("Loan application not found.");
+  const loan = loanSnap.data();
+
+  if (loan.status !== "Pending Review") {
+    throw new Error(
+      `This application is "${loan.status}" and can no longer be rejected.`,
+    );
+  }
+
+  await updateDoc(loanRef, {
+    status: "Rejected",
+    rejectionReason: typeof reason === "string" ? reason.trim() : "",
+    interestRate: null,
+    monthlyPayment: null,
+    originationDate: null,
+    nextPaymentDate: null,
+    decisionBy: adminUid || null,
     updatedAt: serverTimestamp(),
   });
 }
