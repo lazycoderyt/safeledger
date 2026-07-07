@@ -20,6 +20,7 @@ import {
   collection,
   runTransaction,
   Timestamp,
+  increment,
 } from "firebase/firestore";
 import { auth, db } from "@/libs/firebase";
 import {
@@ -987,3 +988,145 @@ export async function setTransactionStatusMessage(adminUid, details) {
     updatedBy: adminUid || null,
   });
 }
+
+/* -------------------------------------------------------------------- */
+/* Support Chat                                                          */
+/* -------------------------------------------------------------------- */
+/**
+ * One conversation thread per user, `chats/{userId}`, with messages in
+ * the `chats/{userId}/messages` subcollection. There's a single shared
+ * thread per user (not per-admin) — any admin can see and reply to any
+ * user's thread from the admin inbox, the way a small support team
+ * shares one queue.
+ *
+ * Unread counts live on the parent chat document as two independent
+ * counters (`unreadByAdmin`, `unreadByUser`) so the badge on each side
+ * only ever reflects messages *the other party* sent that this side
+ * hasn't opened yet — sending a message never clears your own unread
+ * count of what's still waiting for you to read.
+ */
+
+const CHAT_MESSAGE_MAX_LENGTH = 2000;
+const CHAT_PREVIEW_MAX_LENGTH = 120;
+
+/**
+ * Idempotently ensures a chat thread document exists for a user, and
+ * keeps the denormalized display name/email on it fresh. Safe to call
+ * on every visit to the chat page — it's a single cheap read plus a
+ * merge write, and never touches unread counters or message history
+ * once the thread exists.
+ *
+ * @param {string} userId
+ * @param {{ name?: string, email?: string }} participant
+ * @returns {Promise<void>}
+ */
+export async function ensureChatThread(userId, participant = {}) {
+  if (!userId) throw new Error("ensureChatThread requires a userId.");
+
+  const chatRef = doc(db, "chats", userId);
+  const chatSnap = await getDoc(chatRef);
+
+  const userName = (participant.name || "").trim();
+  const userEmail = (participant.email || "").trim();
+
+  if (!chatSnap.exists()) {
+    await setDoc(chatRef, {
+      userId,
+      userName,
+      userEmail,
+      lastMessage: "",
+      lastMessageAt: null,
+      lastSenderRole: null,
+      unreadByAdmin: 0,
+      unreadByUser: 0,
+      createdAt: serverTimestamp(),
+    });
+  } else {
+    await setDoc(chatRef, { userName, userEmail }, { merge: true });
+  }
+}
+
+/**
+ * Sends a chat message into a user's thread and updates the parent
+ * thread's preview/unread metadata in the same call. Works for both
+ * sides — pass `senderRole: "user"` from the member's chat page or
+ * `senderRole: "admin"` from the admin console; the unread counter
+ * bumped is always the *recipient's*.
+ *
+ * @param {string} userId - The thread this message belongs to (always
+ *   the member's uid, regardless of who's sending).
+ * @param {Object} message
+ * @param {string} message.senderUid
+ * @param {"user"|"admin"} message.senderRole
+ * @param {string} [message.senderName]
+ * @param {string} message.text
+ * @returns {Promise<void>}
+ */
+export async function sendChatMessage(userId, message) {
+  const { senderUid, senderRole, senderName, text } = message || {};
+
+  if (!userId) throw new Error("sendChatMessage requires a userId.");
+  if (!senderUid) throw new Error("sendChatMessage requires a senderUid.");
+  if (senderRole !== "user" && senderRole !== "admin") {
+    throw new Error('sendChatMessage: senderRole must be "user" or "admin".');
+  }
+
+  const trimmed = typeof text === "string" ? text.trim() : "";
+  if (!trimmed) {
+    throw new Error("Enter a message before sending.");
+  }
+  if (trimmed.length > CHAT_MESSAGE_MAX_LENGTH) {
+    throw new Error(
+      `Messages are limited to ${CHAT_MESSAGE_MAX_LENGTH} characters.`,
+    );
+  }
+
+  const resolvedSenderName =
+    (senderName || "").trim() ||
+    (senderRole === "admin" ? "SafeLedger Support" : "Member");
+
+  await addDoc(collection(db, "chats", userId, "messages"), {
+    senderUid,
+    senderRole,
+    senderName: resolvedSenderName,
+    text: trimmed,
+    createdAt: serverTimestamp(),
+  });
+
+  const preview =
+    trimmed.length > CHAT_PREVIEW_MAX_LENGTH
+      ? `${trimmed.slice(0, CHAT_PREVIEW_MAX_LENGTH - 1)}…`
+      : trimmed;
+  const unreadField = senderRole === "user" ? "unreadByAdmin" : "unreadByUser";
+
+  await setDoc(
+    doc(db, "chats", userId),
+    {
+      lastMessage: preview,
+      lastMessageAt: serverTimestamp(),
+      lastSenderRole: senderRole,
+      [unreadField]: increment(1),
+    },
+    { merge: true },
+  );
+}
+
+/**
+ * Zeroes out one side's unread counter on a chat thread — call when
+ * that side opens/is actively viewing the conversation.
+ *
+ * @param {string} userId
+ * @param {"user"|"admin"} role - Whose unread counter to clear.
+ * @returns {Promise<void>}
+ */
+export async function markChatThreadRead(userId, role) {
+  if (!userId) throw new Error("markChatThreadRead requires a userId.");
+  if (role !== "user" && role !== "admin") {
+    throw new Error('markChatThreadRead: role must be "user" or "admin".');
+  }
+
+  const field = role === "admin" ? "unreadByAdmin" : "unreadByUser";
+  await setDoc(doc(db, "chats", userId), { [field]: 0 }, { merge: true });
+}
+
+export { CHAT_MESSAGE_MAX_LENGTH };

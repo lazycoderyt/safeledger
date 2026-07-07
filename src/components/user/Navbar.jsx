@@ -20,9 +20,11 @@ import {
   Bell,
   LogOut,
   ChevronDown,
+  MessageCircle,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { formatAccountNumberDisplay } from "@/utils/Cryptogenacc";
+import { useChatThreadMeta } from "@/utils/useChatThreadMeta";
 
 /**
  * components/user/Navbar.jsx
@@ -104,6 +106,17 @@ const NAV_BLOCKS = [
   },
   {
     type: "group",
+    label: "Support",
+    items: [
+      {
+        label: "Support Chat",
+        href: "/dashboard/user/support",
+        icon: MessageCircle,
+      },
+    ],
+  },
+  {
+    type: "group",
     label: "System Control",
     items: [
       {
@@ -146,7 +159,13 @@ function getInitials(name) {
 /* ------------------------------------------------------------------ */
 /* Shared nav link — active state gets the left-border accent treatment */
 /* ------------------------------------------------------------------ */
-function NavLink({ item, pathname, onNavigate, indent = false }) {
+function NavLink({
+  item,
+  pathname,
+  onNavigate,
+  indent = false,
+  badgeCount = 0,
+}) {
   const Icon = item.icon;
   const active = pathname === item.href;
   return (
@@ -163,7 +182,15 @@ function NavLink({ item, pathname, onNavigate, indent = false }) {
       }`}
     >
       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-      {item.label}
+      <span className="flex-1">{item.label}</span>
+      {badgeCount > 0 && (
+        <span
+          aria-label={`${badgeCount} unread`}
+          className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-orange-500 px-1.5 text-[10px] font-bold text-white"
+        >
+          {badgeCount}
+        </span>
+      )}
     </Link>
   );
 }
@@ -227,7 +254,7 @@ function NavDropdown({ block, pathname, onNavigate }) {
 /* Shared nav content — rendered inside both the desktop sidebar and  */
 /* the mobile drawer so the two never drift out of sync.              */
 /* ------------------------------------------------------------------ */
-function NavContent({ pathname, onNavigate }) {
+function NavContent({ pathname, onNavigate, badgeCounts = {} }) {
   return (
     <nav
       className="flex-1 overflow-y-auto px-4 py-6 space-y-7"
@@ -256,6 +283,7 @@ function NavContent({ pathname, onNavigate }) {
                   item={item}
                   pathname={pathname}
                   onNavigate={onNavigate}
+                  badgeCount={badgeCounts[item.href] || 0}
                 />
               ))}
             </div>
@@ -407,9 +435,13 @@ function BrandMark() {
 /* Main export                                                        */
 /* ------------------------------------------------------------------ */
 export default function Navbar() {
-  const { profile, logoutUser } = useAuth();
+  const { user, profile, logoutUser } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
+  const { thread: supportThread } = useChatThreadMeta(user?.uid);
+  const badgeCounts = {
+    "/dashboard/user/support": supportThread?.unreadByUser || 0,
+  };
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -485,6 +517,7 @@ export default function Navbar() {
         <NavContent
           pathname={pathname}
           onNavigate={() => setDrawerOpen(false)}
+          badgeCounts={badgeCounts}
         />
         <IdentityWidget
           profile={profile}
@@ -500,7 +533,11 @@ export default function Navbar() {
           <NotificationBell />
         </div>
 
-        <NavContent pathname={pathname} onNavigate={undefined} />
+        <NavContent
+          pathname={pathname}
+          onNavigate={undefined}
+          badgeCounts={badgeCounts}
+        />
         <IdentityWidget
           profile={profile}
           onLogout={handleLogout}

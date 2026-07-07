@@ -17,9 +17,11 @@ import {
   Clock,
   HandCoins,
   Megaphone,
+  MessageCircle,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/libs/firebase";
+import { useAdminChatThreads } from "@/utils/useAdminChatThreads";
 
 /**
  * components/admin/AdminNavbar.jsx
@@ -78,6 +80,16 @@ const NAV_BLOCKS = [
     ],
   },
   {
+    label: "Support",
+    items: [
+      {
+        label: "Messages",
+        href: "/dashboard/admin/messages",
+        icon: MessageCircle,
+      },
+    ],
+  },
+  {
     label: "System",
     items: [
       {
@@ -124,7 +136,7 @@ function BrandMark() {
 /* ------------------------------------------------------------------ */
 /* Nav link — indigo active accent to distinguish from the user side  */
 /* ------------------------------------------------------------------ */
-function NavLink({ item, pathname, onNavigate }) {
+function NavLink({ item, pathname, onNavigate, badgeCount = 0 }) {
   const Icon = item.icon;
   const active = pathname === item.href;
   return (
@@ -139,12 +151,20 @@ function NavLink({ item, pathname, onNavigate }) {
       }`}
     >
       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-      {item.label}
+      <span className="flex-1">{item.label}</span>
+      {badgeCount > 0 && (
+        <span
+          aria-label={`${badgeCount} unread`}
+          className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-orange-500 px-1.5 text-[10px] font-bold text-white"
+        >
+          {badgeCount}
+        </span>
+      )}
     </Link>
   );
 }
 
-function NavContent({ pathname, onNavigate }) {
+function NavContent({ pathname, onNavigate, badgeCounts = {} }) {
   return (
     <nav
       className="flex-1 overflow-y-auto px-4 py-6 space-y-7"
@@ -162,6 +182,7 @@ function NavContent({ pathname, onNavigate }) {
                 item={item}
                 pathname={pathname}
                 onNavigate={onNavigate}
+                badgeCount={badgeCounts[item.href] || 0}
               />
             ))}
           </div>
@@ -218,7 +239,7 @@ function IdentityWidget({ profile, onLogout, loggingOut }) {
 /* Notification bell — real, live counts of items needing admin      */
 /* action (pending transactions + pending loan/mortgage applications) */
 /* ------------------------------------------------------------------ */
-function NotificationBell() {
+function NotificationBell({ totalUnreadThreads = 0 }) {
   const [open, setOpen] = useState(false);
   const [pendingTransactions, setPendingTransactions] = useState(0);
   const [pendingLoans, setPendingLoans] = useState(0);
@@ -261,7 +282,7 @@ function NotificationBell() {
     };
   }, []);
 
-  const totalPending = pendingTransactions + pendingLoans;
+  const totalPending = pendingTransactions + pendingLoans + totalUnreadThreads;
 
   return (
     <div ref={wrapperRef} className="relative">
@@ -322,6 +343,22 @@ function NotificationBell() {
                 {pendingLoans}
               </span>
             </Link>
+            <Link
+              href="/dashboard/admin/messages"
+              onClick={() => setOpen(false)}
+              className="flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors"
+            >
+              <span className="flex items-center gap-2 text-sm text-slate-700">
+                <MessageCircle
+                  className="h-4 w-4 text-amber-500"
+                  aria-hidden="true"
+                />
+                Unread Support Messages
+              </span>
+              <span className="text-sm font-bold text-slate-900">
+                {totalUnreadThreads}
+              </span>
+            </Link>
           </div>
         </div>
       )}
@@ -336,6 +373,10 @@ export default function AdminNavbar() {
   const { profile, logoutUser } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
+  const { totalUnreadThreads } = useAdminChatThreads();
+  const badgeCounts = {
+    "/dashboard/admin/messages": totalUnreadThreads,
+  };
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -374,7 +415,7 @@ export default function AdminNavbar() {
           </button>
           <BrandMark />
         </div>
-        <NotificationBell />
+        <NotificationBell totalUnreadThreads={totalUnreadThreads} />
       </header>
 
       {/* ---------------- Mobile drawer + backdrop ---------------- */}
@@ -410,6 +451,7 @@ export default function AdminNavbar() {
         <NavContent
           pathname={pathname}
           onNavigate={() => setDrawerOpen(false)}
+          badgeCounts={badgeCounts}
         />
         <IdentityWidget
           profile={profile}
@@ -422,10 +464,14 @@ export default function AdminNavbar() {
       <aside className="hidden md:flex md:fixed md:inset-y-0 md:left-0 md:z-20 md:w-64 md:flex-col bg-white border-r border-slate-200">
         <div className="flex h-16 items-center justify-between px-5 border-b border-slate-200">
           <BrandMark />
-          <NotificationBell />
+          <NotificationBell totalUnreadThreads={totalUnreadThreads} />
         </div>
 
-        <NavContent pathname={pathname} onNavigate={undefined} />
+        <NavContent
+          pathname={pathname}
+          onNavigate={undefined}
+          badgeCounts={badgeCounts}
+        />
         <IdentityWidget
           profile={profile}
           onLogout={handleLogout}
