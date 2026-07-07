@@ -19,6 +19,7 @@ import {
   writeBatch,
   collection,
   runTransaction,
+  Timestamp,
 } from "firebase/firestore";
 import { auth, db } from "@/libs/firebase";
 import {
@@ -527,5 +528,351 @@ export async function updateUserRole(userId, role, actingAdminUid) {
   await updateDoc(profileRef, {
     role,
     updatedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * Admin action: creates a transaction on a user's account with an
+ * admin-chosen date (for backdating), rather than `serverTimestamp()`.
+ * Mirrors recordTransaction()'s balance/metrics math exactly — this is
+ * NOT a raw document write, it's the same atomic ledger update every
+ * other transaction in the app goes through, just with two differences:
+ * a caller-supplied date, and an `adminCreated: true` marker so these
+ * are always distinguishable from organic transactions in an audit.
+ *
+ * @param {string} userId
+ * @param {Object} details
+ * @param {"credit"|"debit"} details.type
+ * @param {number} details.amount
+ * @param {string} details.description
+ * @param {string} [details.category]
+ * @param {"Completed"|"Pending"|"Failed"} [details.status]
+ * @param {Date} details.transactionDate - The admin-chosen date/time.
+ * @param {string} adminUid - uid of the admin performing the action.
+ * @returns {Promise<{ id: string, balanceAfter: number }>}
+ */
+export async function adminCreateTransaction(userId, details, adminUid) {
+  const {
+    type,
+    amount,
+    description = "Transaction",
+    category = "General",
+    status = "Completed",
+    transactionDate,
+  } = details || {};
+
+  if (!userId) throw new Error("adminCreateTransaction requires a userId.");
+  if (type !== "credit" && type !== "debit") {
+    throw new Error(
+      'adminCreateTransaction: type must be "credit" or "debit".',
+    );
+  }
+  if (typeof amount !== "number" || amount <= 0) {
+    throw new Error(
+      "adminCreateTransaction: amount must be a positive number.",
+    );
+  }
+  if (
+    !(transactionDate instanceof Date) ||
+    Number.isNaN(transactionDate.getTime())
+  ) {
+    throw new Error("adminCreateTransaction requires a valid transactionDate.");
+  }
+
+  const accountRef = doc(db, "accounts", userId);
+  const transactionRef = doc(collection(db, "transactions"));
+
+  const balanceAfter = await runTransaction(db, async (txn) => {
+    const accountSnap = await txn.get(accountRef);
+    if (!accountSnap.exists()) {
+      throw new Error("No ledger account found for this user.");
+    }
+    const account = accountSnap.data();
+
+    const isFailed = status === "Failed";
+    const currentAvailable = account.availableBalance ?? 0;
+    const currentLedger = account.ledgerBalance ?? 0;
+
+    if (!isFailed && type === "debit" && amount > currentAvailable) {
+      throw new Error("Insufficient available balance for this debit.");
+    }
+
+    const delta = type === "credit" ? amount : -amount;
+    const nextAvailable = isFailed
+      ? currentAvailable
+      : currentAvailable + delta;
+    const nextLedger = isFailed ? currentLedger : currentLedger + delta;
+
+    const metrics = {
+      totalDebitsCount: account.metrics?.totalDebitsCount ?? 0,
+      totalCreditsCount: account.metrics?.totalCreditsCount ?? 0,
+      failedTransactionsCount: account.metrics?.failedTransactionsCount ?? 0,
+    };
+    if (isFailed) {
+      metrics.failedTransactionsCount += 1;
+    } else if (type === "credit") {
+      metrics.totalCreditsCount += 1;
+    } else {
+      metrics.totalDebitsCount += 1;
+    }
+
+    txn.update(accountRef, {
+      availableBalance: nextAvailable,
+      ledgerBalance: nextLedger,
+      metrics,
+      updatedAt: serverTimestamp(),
+    });
+
+    txn.set(transactionRef, {
+      id: transactionRef.id,
+      userId,
+      type,
+      amount,
+      description,
+      category,
+      status,
+      currency: account.currency || "USD",
+      balanceAfter: isFailed ? currentAvailable : nextAvailable,
+      createdAt: Timestamp.fromDate(transactionDate),
+      adminCreated: true,
+      lastEditedBy: adminUid || null,
+    });
+
+    return isFailed ? currentAvailable : nextAvailable;
+  });
+
+  return { id: transactionRef.id, balanceAfter };
+}
+
+/**
+ * Admin action: edits an existing transaction — amount, type, status,
+ * description, category, and/or its date. If the edit changes the
+ * transaction's effect on the account (amount, type, or status moving
+ * to/from "Failed"), the account's availableBalance/ledgerBalance and
+ * metrics are adjusted by the *difference* between the old and new
+ * effect, atomically, in the same Firestore transaction as the
+ * document edit. A debit-increasing edit that would overdraw the
+ * account is rejected, same as anywhere else in the app.
+ *
+ * Known limitation: `balanceAfter` on this transaction (and the stored
+ * `balanceAfter` on every transaction that happened after it) is a
+ * point-in-time snapshot taken when each transaction was originally
+ * recorded. Editing an old transaction's amount corrects the *current*
+ * account balance, but does not retroactively recompute the
+ * `balanceAfter` snapshots on transactions that came after it — those
+ * will no longer exactly reconstruct a running total if you replay
+ * history in order. Fully solving that means replaying the ledger
+ * forward from the edit point, which is out of scope here.
+ *
+ * @param {string} transactionId
+ * @param {Object} updates - Any subset of: type, amount, description,
+ *   category, status, transactionDate (Date).
+ * @param {string} adminUid
+ * @returns {Promise<void>}
+ */
+export async function adminUpdateTransaction(transactionId, updates, adminUid) {
+  if (!transactionId)
+    throw new Error("adminUpdateTransaction requires a transactionId.");
+
+  const {
+    type: nextTypeInput,
+    amount: nextAmountInput,
+    description: nextDescription,
+    category: nextCategory,
+    status: nextStatusInput,
+    transactionDate,
+  } = updates || {};
+
+  if (
+    nextTypeInput !== undefined &&
+    nextTypeInput !== "credit" &&
+    nextTypeInput !== "debit"
+  ) {
+    throw new Error(
+      'adminUpdateTransaction: type must be "credit" or "debit".',
+    );
+  }
+  if (
+    nextAmountInput !== undefined &&
+    (typeof nextAmountInput !== "number" || nextAmountInput <= 0)
+  ) {
+    throw new Error(
+      "adminUpdateTransaction: amount must be a positive number.",
+    );
+  }
+  if (
+    transactionDate !== undefined &&
+    (!(transactionDate instanceof Date) ||
+      Number.isNaN(transactionDate.getTime()))
+  ) {
+    throw new Error(
+      "adminUpdateTransaction: transactionDate must be a valid Date.",
+    );
+  }
+
+  const transactionRef = doc(db, "transactions", transactionId);
+
+  await runTransaction(db, async (txn) => {
+    const transactionSnap = await txn.get(transactionRef);
+    if (!transactionSnap.exists()) {
+      throw new Error("Transaction not found.");
+    }
+    const oldTxn = transactionSnap.data();
+
+    const accountRef = doc(db, "accounts", oldTxn.userId);
+    const accountSnap = await txn.get(accountRef);
+    if (!accountSnap.exists()) {
+      throw new Error("No ledger account found for this transaction's user.");
+    }
+    const account = accountSnap.data();
+
+    const nextType = nextTypeInput ?? oldTxn.type;
+    const nextAmount = nextAmountInput ?? oldTxn.amount;
+    const nextStatus = nextStatusInput ?? oldTxn.status;
+
+    const wasFailed = oldTxn.status === "Failed";
+    const isFailed = nextStatus === "Failed";
+
+    const oldDelta = wasFailed
+      ? 0
+      : oldTxn.type === "credit"
+        ? oldTxn.amount
+        : -oldTxn.amount;
+    const newDelta = isFailed
+      ? 0
+      : nextType === "credit"
+        ? nextAmount
+        : -nextAmount;
+    const netDelta = newDelta - oldDelta;
+
+    const currentAvailable = account.availableBalance ?? 0;
+    const currentLedger = account.ledgerBalance ?? 0;
+    const nextAvailable = currentAvailable + netDelta;
+    const nextLedger = currentLedger + netDelta;
+
+    if (nextAvailable < 0) {
+      throw new Error(
+        "This edit would overdraw the user's account. Adjust the amount and try again.",
+      );
+    }
+
+    // Move the metrics counter from whichever bucket the transaction
+    // used to belong to, into whichever bucket it belongs to now.
+    const metrics = {
+      totalDebitsCount: account.metrics?.totalDebitsCount ?? 0,
+      totalCreditsCount: account.metrics?.totalCreditsCount ?? 0,
+      failedTransactionsCount: account.metrics?.failedTransactionsCount ?? 0,
+    };
+    const oldBucket = wasFailed
+      ? "failedTransactionsCount"
+      : oldTxn.type === "credit"
+        ? "totalCreditsCount"
+        : "totalDebitsCount";
+    const newBucket = isFailed
+      ? "failedTransactionsCount"
+      : nextType === "credit"
+        ? "totalCreditsCount"
+        : "totalDebitsCount";
+    if (oldBucket !== newBucket) {
+      metrics[oldBucket] = Math.max(0, metrics[oldBucket] - 1);
+      metrics[newBucket] += 1;
+    }
+
+    txn.update(accountRef, {
+      availableBalance: nextAvailable,
+      ledgerBalance: nextLedger,
+      metrics,
+      updatedAt: serverTimestamp(),
+    });
+
+    const transactionUpdates = {
+      type: nextType,
+      amount: nextAmount,
+      status: nextStatus,
+      balanceAfter: nextAvailable,
+      updatedAt: serverTimestamp(),
+      lastEditedBy: adminUid || null,
+    };
+    if (nextDescription !== undefined)
+      transactionUpdates.description = nextDescription;
+    if (nextCategory !== undefined) transactionUpdates.category = nextCategory;
+    if (transactionDate !== undefined) {
+      transactionUpdates.createdAt = Timestamp.fromDate(transactionDate);
+    }
+
+    txn.update(transactionRef, transactionUpdates);
+  });
+}
+
+/**
+ * Admin action: permanently deletes a transaction and reverses its
+ * effect on the owning account's balance/metrics, atomically. Refuses
+ * to delete if doing so would leave the account balance negative
+ * (this can happen when deleting an old credit whose funds have
+ * already been spent elsewhere) — surfaces a clear error instead of
+ * silently corrupting the ledger.
+ *
+ * @param {string} transactionId
+ * @returns {Promise<void>}
+ */
+export async function adminDeleteTransaction(transactionId) {
+  if (!transactionId)
+    throw new Error("adminDeleteTransaction requires a transactionId.");
+
+  const transactionRef = doc(db, "transactions", transactionId);
+
+  await runTransaction(db, async (txn) => {
+    const transactionSnap = await txn.get(transactionRef);
+    if (!transactionSnap.exists()) {
+      throw new Error("Transaction not found.");
+    }
+    const oldTxn = transactionSnap.data();
+
+    const accountRef = doc(db, "accounts", oldTxn.userId);
+    const accountSnap = await txn.get(accountRef);
+    if (!accountSnap.exists()) {
+      throw new Error("No ledger account found for this transaction's user.");
+    }
+    const account = accountSnap.data();
+
+    const wasFailed = oldTxn.status === "Failed";
+    const oldDelta = wasFailed
+      ? 0
+      : oldTxn.type === "credit"
+        ? oldTxn.amount
+        : -oldTxn.amount;
+    const reverseDelta = -oldDelta;
+
+    const currentAvailable = account.availableBalance ?? 0;
+    const currentLedger = account.ledgerBalance ?? 0;
+    const nextAvailable = currentAvailable + reverseDelta;
+    const nextLedger = currentLedger + reverseDelta;
+
+    if (nextAvailable < 0) {
+      throw new Error(
+        "Deleting this transaction would leave the account balance negative. Resolve that first.",
+      );
+    }
+
+    const metrics = {
+      totalDebitsCount: account.metrics?.totalDebitsCount ?? 0,
+      totalCreditsCount: account.metrics?.totalCreditsCount ?? 0,
+      failedTransactionsCount: account.metrics?.failedTransactionsCount ?? 0,
+    };
+    const bucket = wasFailed
+      ? "failedTransactionsCount"
+      : oldTxn.type === "credit"
+        ? "totalCreditsCount"
+        : "totalDebitsCount";
+    metrics[bucket] = Math.max(0, metrics[bucket] - 1);
+
+    txn.update(accountRef, {
+      availableBalance: nextAvailable,
+      ledgerBalance: nextLedger,
+      metrics,
+      updatedAt: serverTimestamp(),
+    });
+
+    txn.delete(transactionRef);
   });
 }
