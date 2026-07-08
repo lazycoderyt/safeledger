@@ -71,7 +71,7 @@ function MessageBubble({ message }) {
       >
         {!isMine && (
           <p className="mb-0.5 text-[11px] font-semibold text-blue-600">
-            {message.senderName || "Support"}
+            {"ApexGlobal support" || "Support"}
           </p>
         )}
         <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
