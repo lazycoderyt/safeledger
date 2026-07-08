@@ -19,8 +19,8 @@ const SLIDES = [
     headline: "Dedicated Financial Stewardship",
     subheadline:
       "For three decades, we have anchored educational institutional capital with unyielding security standards.",
-    primaryCta: { label: "Meet Our Advisors", href: "#advisors" },
-    secondaryCta: { label: "Our Security Protocol", href: "#security" },
+    primaryCta: { label: "Register", href: "/auth/sign-up" },
+    secondaryCta: { label: "Login", href: "/auth/sign-in" },
   },
   {
     id: "student-capital",
@@ -32,8 +32,8 @@ const SLIDES = [
     headline: "Building Tomorrow\u2019s Student Capital",
     subheadline:
       "Personalized checking, specialized grants, and advisory services built precisely for the modern educational ecosystem.",
-    primaryCta: { label: "Student Banking Labs", href: "#labs" },
-    secondaryCta: { label: "Disbursement API", href: "#api" },
+    primaryCta: { label: "Register", href: "/auth/sign-up" },
+    secondaryCta: { label: "Login", href: "/auth/sign-in" },
   },
 ];
 const AUTOPLAY_MS = 7000;

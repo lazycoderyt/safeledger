@@ -9,6 +9,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useRouter } from "next/navigation";
 
 /**
  * components/user/BalanceCard.jsx
@@ -89,6 +90,7 @@ function getInitial(name) {
 
 export default function BalanceCard({ account }) {
   const { profile } = useAuth();
+  const router = useRouter();
 
   const [now, setNow] = useState(() => new Date());
 
@@ -98,9 +100,9 @@ export default function BalanceCard({ account }) {
   }, []);
 
   const quickActions = [
-    { label: "Receive", icon: ArrowDown },
-    { label: "Send", icon: ArrowUp },
-    { label: "Swap", icon: RefreshCw },
+    { label: "Receive", icon: ArrowDown, href: "/dashboard/user/statement" },
+    { label: "Send", icon: ArrowUp, href: "/dashboard/user/transfer" },
+    { label: "Swap", icon: RefreshCw, href: "/dashboard/user/billpay" },
   ];
 
   return (
@@ -167,8 +169,9 @@ export default function BalanceCard({ account }) {
 
         {/* Quick action rails */}
         <div className="flex gap-2 sm:gap-3">
-          {quickActions.map(({ label, icon: Icon }) => (
+          {quickActions.map(({ label, icon: Icon, href }) => (
             <button
+              onClick={() => router.push(href)}
               key={label}
               type="button"
               className="flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-xl border border-white/20 bg-white/10 p-2 text-[10px] text-white backdrop-blur-sm transition-all hover:bg-white/20 sm:h-20 sm:w-20 sm:gap-2 sm:p-3 sm:text-xs"
