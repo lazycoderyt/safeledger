@@ -201,7 +201,7 @@ export default function BottomNav() {
   return (
     <nav
       aria-label="Primary"
-      className="md:hidden fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur-sm pb-[env(safe-area-inset-bottom)]"
+      className="print:hidden md:hidden fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur-sm pb-[env(safe-area-inset-bottom)]"
     >
       <div className="mx-auto flex max-w-lg items-end justify-around px-1">
         {TABS.map((tab) => {

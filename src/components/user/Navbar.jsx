@@ -469,7 +469,7 @@ export default function Navbar() {
   return (
     <>
       {/* ---------------- Mobile top utility bar ---------------- */}
-      <header className="md:hidden fixed top-0 inset-x-0 z-30 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4">
+      <header className="print:hidden md:hidden fixed top-0 inset-x-0 z-30 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -488,7 +488,7 @@ export default function Navbar() {
       <div
         aria-hidden={!drawerOpen}
         onClick={() => setDrawerOpen(false)}
-        className={`md:hidden fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-sm transition-opacity duration-300 ${
+        className={`print:hidden md:hidden fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-sm transition-opacity duration-300 ${
           drawerOpen
             ? "opacity-100 pointer-events-auto"
             : "opacity-0 pointer-events-none"
@@ -498,7 +498,7 @@ export default function Navbar() {
         role="dialog"
         aria-modal="true"
         aria-label="Dashboard navigation menu"
-        className={`md:hidden fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-white border-r border-slate-200 transition-transform duration-300 ease-in-out ${
+        className={`print:hidden md:hidden fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-white border-r border-slate-200 transition-transform duration-300 ease-in-out ${
           drawerOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -527,7 +527,7 @@ export default function Navbar() {
       </div>
 
       {/* ---------------- Desktop fixed sidebar ---------------- */}
-      <aside className="hidden md:flex md:fixed md:inset-y-0 md:left-0 md:z-20 md:w-64 md:flex-col bg-white border-r border-slate-200">
+      <aside className="print:hidden hidden md:flex md:fixed md:inset-y-0 md:left-0 md:z-20 md:w-64 md:flex-col bg-white border-r border-slate-200">
         <div className="flex h-16 items-center justify-between px-5 border-b border-slate-200">
           <BrandMark />
           <NotificationBell />

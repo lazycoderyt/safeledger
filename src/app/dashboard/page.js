@@ -4,7 +4,7 @@
 import { useEffect } from "react";
 import { useAuth } from "@/context/AuthContext"; // Adjusted path matching your new context file
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import AppLoader from "@/components/AppLoader";
 
 export default function DashboardController() {
   const { user, profile, loading } = useAuth();
@@ -32,12 +32,5 @@ export default function DashboardController() {
   }, [user, profile, loading, router]);
 
   // Clean intercept loading splash to cover up the seamless redirection transition
-  return (
-    <div className="h-screen w-screen bg-slate-950 flex flex-col items-center justify-center gap-3">
-      <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
-      <p className="text-xs font-mono tracking-widest text-slate-500 uppercase">
-        Synchronizing Security Profile...
-      </p>
-    </div>
-  );
+  return <AppLoader />;
 }

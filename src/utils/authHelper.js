@@ -503,6 +503,131 @@ export async function rejectLoanApplication(loanId, adminUid, reason = "") {
 export const ACCOUNT_NUMBER_PATTERN = /^[1-9]\d{9,11}$/; // 10-12 digits, no leading zero
 
 /**
+ * Applies a payment from a user's own available balance toward one of
+ * their own Active loans/mortgages — the "Settlement" half of Bill Pay
+ * & Settlement. Debits the ledger account and reduces the loan's
+ * remainingBalance in the same atomic transaction, exactly the way
+ * recordTransaction() debits for an ordinary transfer, so a payment
+ * can never be split into "money left the account but the loan wasn't
+ * credited" or vice versa.
+ *
+ * Overpayment past the exact remaining balance is rejected rather than
+ * silently capped, so the amount the user sees and the amount that
+ * gets applied always match. Paying the full remaining balance closes
+ * the loan out as "Paid Off".
+ *
+ * @param {string} userId
+ * @param {string} loanId
+ * @param {number} amount
+ * @returns {Promise<{ id: string, balanceAfter: number, remainingBalance: number, paidOff: boolean }>}
+ */
+export async function payLoanInstallment(userId, loanId, amount) {
+  if (!userId) throw new Error("payLoanInstallment requires a userId.");
+  if (!loanId) throw new Error("payLoanInstallment requires a loanId.");
+  if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Enter a payment amount greater than zero.");
+  }
+
+  const accountRef = doc(db, "accounts", userId);
+  const loanRef = doc(db, "loans", loanId);
+  const transactionRef = doc(collection(db, "transactions"));
+
+  const outcome = await runTransaction(db, async (txn) => {
+    const accountSnap = await txn.get(accountRef);
+    const loanSnap = await txn.get(loanRef);
+
+    if (!accountSnap.exists()) {
+      throw new Error("No ledger account found for this user.");
+    }
+    if (!loanSnap.exists()) {
+      throw new Error("Loan not found.");
+    }
+
+    const account = accountSnap.data();
+    const loan = loanSnap.data();
+
+    if (loan.userId !== userId) {
+      throw new Error("This loan does not belong to this account.");
+    }
+    if (loan.status !== "Active") {
+      throw new Error(
+        `This loan is "${loan.status}" and isn't open for payments.`,
+      );
+    }
+
+    const currentAvailable = account.availableBalance ?? 0;
+    if (amount > currentAvailable) {
+      throw new Error("This payment exceeds your available balance.");
+    }
+
+    const remainingBalance = loan.remainingBalance ?? loan.principal ?? 0;
+    if (amount > remainingBalance + 0.005) {
+      throw new Error(
+        `This payment exceeds the remaining balance of ${remainingBalance.toLocaleString(
+          "en-US",
+          { style: "currency", currency: "USD" },
+        )}.`,
+      );
+    }
+
+    const nextRemaining = Math.max(0, remainingBalance - amount);
+    const paidOff = nextRemaining <= 0.005;
+
+    let nextPaymentDate = null;
+    if (!paidOff) {
+      nextPaymentDate = new Date();
+      nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+    }
+
+    txn.update(loanRef, {
+      remainingBalance: paidOff ? 0 : nextRemaining,
+      status: paidOff ? "Paid Off" : "Active",
+      nextPaymentDate,
+      updatedAt: serverTimestamp(),
+    });
+
+    const currentLedger = account.ledgerBalance ?? 0;
+    const nextAvailable = currentAvailable - amount;
+    const nextLedger = currentLedger - amount;
+
+    const metrics = {
+      totalDebitsCount: (account.metrics?.totalDebitsCount ?? 0) + 1,
+      totalCreditsCount: account.metrics?.totalCreditsCount ?? 0,
+      failedTransactionsCount: account.metrics?.failedTransactionsCount ?? 0,
+    };
+
+    txn.update(accountRef, {
+      availableBalance: nextAvailable,
+      ledgerBalance: nextLedger,
+      metrics,
+      updatedAt: serverTimestamp(),
+    });
+
+    txn.set(transactionRef, {
+      id: transactionRef.id,
+      userId,
+      type: "debit",
+      amount,
+      description: `Loan payment — ${loan.purpose || "Loan"}${paidOff ? " (paid in full)" : ""}`,
+      category: "Loan Payment",
+      status: "Completed",
+      currency: account.currency || "USD",
+      balanceAfter: nextAvailable,
+      relatedLoanId: loanId,
+      createdAt: serverTimestamp(),
+    });
+
+    return {
+      balanceAfter: nextAvailable,
+      remainingBalance: paidOff ? 0 : nextRemaining,
+      paidOff,
+    };
+  });
+
+  return { id: transactionRef.id, ...outcome };
+}
+
+/**
  * Admin action: updates a user's display name and/or account number.
  * Only the fields actually provided are written. When the account
  * number changes, `profiles/{uid}.accountNumber` and
