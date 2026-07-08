@@ -8,8 +8,6 @@ import {
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
-  EmailAuthProvider,
-  reauthenticateWithCredential,
 } from "firebase/auth";
 import {
   doc,
@@ -34,6 +32,27 @@ import { setSessionCookie, clearSessionCookie } from "@/utils/session";
 import { TRANSACTION_STATUS_PRESET_IDS } from "@/utils/transactionStatusPresets";
 
 /**
+ * One-way hashes a transfer PIN using the Web Crypto API (SHA-256),
+ * salted with the user's own uid so the same 4-digit PIN never
+ * produces the same stored hash for two different users. This is a
+ * client-only app with no backend of its own to hash server-side, so
+ * this is the strongest reasonable option available: never the raw
+ * PIN at rest, using a standard, browser/Node-native primitive rather
+ * than a hand-rolled algorithm.
+ *
+ * @param {string} uid
+ * @param {string} pin
+ * @returns {Promise<string>} Hex-encoded digest.
+ */
+async function hashTransferPin(uid, pin) {
+  const data = new TextEncoder().encode(`${uid}:${pin}`);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
  * Registers a new user, then atomically provisions both their KYC-style
  * profile document (`profiles/{uid}`) and their core financial ledger
  * account (`accounts/{uid}`) via a single Firestore write batch.
@@ -51,6 +70,8 @@ import { TRANSACTION_STATUS_PRESET_IDS } from "@/utils/transactionStatusPresets"
  * @param {string} profile.country - Country of residence
  * @param {string} profile.mobileNumber
  * @param {string} profile.accountType - e.g. "Personal Checking"
+ * @param {string} profile.transferPin - 4-digit PIN required to confirm
+ *   every transfer; only its salted hash is ever persisted.
  * @returns {Promise<{ user: import("firebase/auth").User, accountNumber: string }>}
  */
 export async function signUpUser(email, password, profile) {
@@ -61,7 +82,12 @@ export async function signUpUser(email, password, profile) {
     country = "",
     mobileNumber = "",
     accountType = "",
+    transferPin,
   } = profile || {};
+
+  if (!/^\d{4}$/.test(transferPin || "")) {
+    throw new Error("Create a 4-digit transfer PIN to continue.");
+  }
 
   const credential = await createUserWithEmailAndPassword(
     auth,
@@ -76,6 +102,7 @@ export async function signUpUser(email, password, profile) {
   setSessionCookie(token);
 
   const accountNumber = generateUSAccountNumber();
+  const transferPinHash = await hashTransferPin(user.uid, transferPin);
 
   // Best-effort — a failure here shouldn't block account creation.
   if (fullName) {
@@ -102,6 +129,7 @@ export async function signUpUser(email, password, profile) {
     createdAt: serverTimestamp(),
     avatarUrl: "",
     role: "user",
+    transferPinHash,
   });
 
   const accountRef = doc(db, "accounts", user.uid);
@@ -227,50 +255,40 @@ export async function updateCardSettings(userId, variant, updates) {
 }
 
 /**
- * Step-up authentication for money-movement actions (wire transfers,
- * bill payments, loan settlements): re-verifies the signed-in user's
- * own account password against Firebase Auth via reauthentication —
- * the standard way to confirm "it's really you" for a sensitive action
- * without maintaining a second, separate password/PIN system.
+ * Step-up authentication for money-movement actions: verifies the
+ * signed-in user's 4-digit transfer PIN against the salted hash stored
+ * on their profile at sign-up. Never compares or transmits the raw
+ * PIN anywhere except in this hash computation.
  *
  * Throws with a message safe to show directly in the UI. Callers
  * should require this to succeed before touching the ledger.
  *
- * @param {string} password - The password as typed by the user.
+ * @param {string} uid
+ * @param {string} pin - The PIN as typed by the user.
  * @returns {Promise<void>}
  */
-export async function verifyTransferPassword(password) {
-  const currentUser = auth.currentUser;
-  if (!currentUser) {
+export async function verifyTransferPin(uid, pin) {
+  if (!uid) {
     throw new Error("You need to be signed in to do this.");
   }
-  if (!password) {
-    throw new Error("Enter your account password to continue.");
+  if (!/^\d{4}$/.test(pin || "")) {
+    throw new Error("Enter your 4-digit transfer PIN.");
   }
 
-  try {
-    const credential = EmailAuthProvider.credential(
-      currentUser.email,
-      password,
+  const profileSnap = await getDoc(doc(db, "profiles", uid));
+  if (!profileSnap.exists()) {
+    throw new Error("Couldn't verify your PIN. Please try again.");
+  }
+  const profile = profileSnap.data();
+  if (!profile.transferPinHash) {
+    throw new Error(
+      "No transfer PIN is set on this account. Please contact support.",
     );
-    await reauthenticateWithCredential(currentUser, credential);
-  } catch (err) {
-    if (
-      err?.code === "auth/wrong-password" ||
-      err?.code === "auth/invalid-credential"
-    ) {
-      throw new Error("That password is incorrect. Please try again.");
-    }
-    if (err?.code === "auth/too-many-requests") {
-      throw new Error(
-        "Too many attempts. Please wait a moment before trying again.",
-      );
-    }
-    if (err?.code === "auth/network-request-failed") {
-      throw new Error("Network error. Check your connection and try again.");
-    }
-    console.error("Transfer password verification failed:", err);
-    throw new Error("Couldn't verify your password. Please try again.");
+  }
+
+  const candidateHash = await hashTransferPin(uid, pin);
+  if (candidateHash !== profile.transferPinHash) {
+    throw new Error("That PIN is incorrect. Please try again.");
   }
 }
 
@@ -372,6 +390,234 @@ export async function recordTransaction(userId, details) {
   });
 
   return { id: transactionRef.id, balanceAfter };
+}
+
+/**
+ * Submits a wire transfer as a hold, not an immediate debit. Every
+ * user-initiated transfer must be reviewed by an admin before it
+ * actually settles (see approveTransferRequest / rejectTransferRequest
+ * below), so this only ever produces a "Pending" transaction and never
+ * touches `ledgerBalance` — it reduces `availableBalance` immediately
+ * (a hold, so the same funds can't be spent twice while the request
+ * sits in the queue) but leaves the ledger balance untouched until an
+ * admin actually approves it.
+ *
+ * The resulting transaction document is flagged `pendingHold: true`,
+ * which adminUpdateTransaction/adminDeleteTransaction both refuse to
+ * touch — a pending transfer can only be resolved through
+ * approveTransferRequest or rejectTransferRequest, never the generic
+ * transaction editor, so the hold accounting can never be double-
+ * counted or corrupted by an unrelated edit path.
+ *
+ * @param {string} userId
+ * @param {Object} details
+ * @param {number} details.amount
+ * @param {string} details.description
+ * @param {string} details.recipientName
+ * @param {string} details.recipientAccountNumber
+ * @param {string} [details.bankName]
+ * @param {string} [details.bankAddress]
+ * @param {string} [details.iban]
+ * @param {string} [details.swiftCode]
+ * @param {string} [details.memo]
+ * @returns {Promise<{ id: string, balanceAfter: number }>}
+ */
+export async function initiateTransferRequest(userId, details) {
+  const {
+    amount,
+    description,
+    recipientName,
+    recipientAccountNumber,
+    bankName = "",
+    bankAddress = "",
+    iban = "",
+    swiftCode = "",
+    memo = "",
+  } = details || {};
+
+  if (!userId) throw new Error("initiateTransferRequest requires a userId.");
+  if (typeof amount !== "number" || amount <= 0) {
+    throw new Error(
+      "initiateTransferRequest: amount must be a positive number.",
+    );
+  }
+  if (!recipientName) {
+    throw new Error("initiateTransferRequest requires a recipientName.");
+  }
+
+  const accountRef = doc(db, "accounts", userId);
+  const transactionRef = doc(collection(db, "transactions"));
+
+  const balanceAfter = await runTransaction(db, async (txn) => {
+    const accountSnap = await txn.get(accountRef);
+    if (!accountSnap.exists()) {
+      throw new Error("No ledger account found for this user.");
+    }
+    const account = accountSnap.data();
+    const currentAvailable = account.availableBalance ?? 0;
+
+    if (amount > currentAvailable) {
+      throw new Error("This transfer exceeds your available balance.");
+    }
+
+    // Hold the funds: available balance drops now so the same money
+    // can't be committed to a second pending request, but the ledger
+    // balance (and metrics) stay exactly as they are until an admin
+    // actually approves this — nothing is "spent" yet.
+    const nextAvailable = currentAvailable - amount;
+
+    txn.update(accountRef, {
+      availableBalance: nextAvailable,
+      updatedAt: serverTimestamp(),
+    });
+
+    txn.set(transactionRef, {
+      id: transactionRef.id,
+      userId,
+      type: "debit",
+      amount,
+      description,
+      category: "Transfer",
+      status: "Pending",
+      currency: account.currency || "USD",
+      balanceAfter: nextAvailable,
+      pendingHold: true,
+      recipientName,
+      recipientAccountNumber: recipientAccountNumber || "",
+      bankName,
+      bankAddress,
+      iban,
+      swiftCode,
+      memo,
+      createdAt: serverTimestamp(),
+    });
+
+    return nextAvailable;
+  });
+
+  return { id: transactionRef.id, balanceAfter };
+}
+
+/**
+ * Admin action: approves a pending transfer request, finalizing the
+ * hold that initiateTransferRequest() placed. The available balance
+ * was already reduced at request time, so this only ever moves
+ * `ledgerBalance` (down by the transfer amount, catching it up to
+ * match) and the debit metrics counter — never touches
+ * `availableBalance` again.
+ *
+ * @param {string} transactionId
+ * @param {string} adminUid
+ * @returns {Promise<void>}
+ */
+export async function approveTransferRequest(transactionId, adminUid) {
+  if (!transactionId) {
+    throw new Error("approveTransferRequest requires a transactionId.");
+  }
+
+  const transactionRef = doc(db, "transactions", transactionId);
+
+  await runTransaction(db, async (txn) => {
+    const transactionSnap = await txn.get(transactionRef);
+    if (!transactionSnap.exists()) {
+      throw new Error("Transfer request not found.");
+    }
+    const transaction = transactionSnap.data();
+
+    if (!transaction.pendingHold || transaction.status !== "Pending") {
+      throw new Error(
+        "This transaction isn't a pending transfer request awaiting approval.",
+      );
+    }
+
+    const accountRef = doc(db, "accounts", transaction.userId);
+    const accountSnap = await txn.get(accountRef);
+    if (!accountSnap.exists()) {
+      throw new Error("No ledger account found for this transfer's user.");
+    }
+    const account = accountSnap.data();
+
+    const nextLedger = (account.ledgerBalance ?? 0) - transaction.amount;
+
+    const metrics = {
+      totalDebitsCount: (account.metrics?.totalDebitsCount ?? 0) + 1,
+      totalCreditsCount: account.metrics?.totalCreditsCount ?? 0,
+      failedTransactionsCount: account.metrics?.failedTransactionsCount ?? 0,
+    };
+
+    txn.update(accountRef, {
+      ledgerBalance: nextLedger,
+      metrics,
+      updatedAt: serverTimestamp(),
+    });
+
+    txn.update(transactionRef, {
+      status: "Completed",
+      pendingHold: false,
+      reviewedBy: adminUid || null,
+      reviewedAt: serverTimestamp(),
+    });
+  });
+}
+
+/**
+ * Admin action: rejects a pending transfer request, releasing the hold
+ * that initiateTransferRequest() placed — restores the exact amount
+ * back to `availableBalance`. `ledgerBalance` was never touched at
+ * request time, so nothing needs to move there.
+ *
+ * @param {string} transactionId
+ * @param {string} adminUid
+ * @param {string} [reason] - Optional note shown back to the user.
+ * @returns {Promise<void>}
+ */
+export async function rejectTransferRequest(
+  transactionId,
+  adminUid,
+  reason = "",
+) {
+  if (!transactionId) {
+    throw new Error("rejectTransferRequest requires a transactionId.");
+  }
+
+  const transactionRef = doc(db, "transactions", transactionId);
+
+  await runTransaction(db, async (txn) => {
+    const transactionSnap = await txn.get(transactionRef);
+    if (!transactionSnap.exists()) {
+      throw new Error("Transfer request not found.");
+    }
+    const transaction = transactionSnap.data();
+
+    if (!transaction.pendingHold || transaction.status !== "Pending") {
+      throw new Error(
+        "This transaction isn't a pending transfer request awaiting approval.",
+      );
+    }
+
+    const accountRef = doc(db, "accounts", transaction.userId);
+    const accountSnap = await txn.get(accountRef);
+    if (!accountSnap.exists()) {
+      throw new Error("No ledger account found for this transfer's user.");
+    }
+    const account = accountSnap.data();
+
+    const nextAvailable = (account.availableBalance ?? 0) + transaction.amount;
+
+    txn.update(accountRef, {
+      availableBalance: nextAvailable,
+      updatedAt: serverTimestamp(),
+    });
+
+    txn.update(transactionRef, {
+      status: "Rejected",
+      pendingHold: false,
+      balanceAfter: nextAvailable,
+      rejectionReason: typeof reason === "string" ? reason.trim() : "",
+      reviewedBy: adminUid || null,
+      reviewedAt: serverTimestamp(),
+    });
+  });
 }
 
 /**
@@ -956,6 +1202,12 @@ export async function adminUpdateTransaction(transactionId, updates, adminUid) {
     }
     const oldTxn = transactionSnap.data();
 
+    if (oldTxn.pendingHold) {
+      throw new Error(
+        "This is a pending transfer request — use Approve or Reject instead of editing it directly.",
+      );
+    }
+
     const accountRef = doc(db, "accounts", oldTxn.userId);
     const accountSnap = await txn.get(accountRef);
     if (!accountSnap.exists()) {
@@ -1064,6 +1316,12 @@ export async function adminDeleteTransaction(transactionId) {
       throw new Error("Transaction not found.");
     }
     const oldTxn = transactionSnap.data();
+
+    if (oldTxn.pendingHold) {
+      throw new Error(
+        "This is a pending transfer request — use Reject instead of deleting it directly.",
+      );
+    }
 
     const accountRef = doc(db, "accounts", oldTxn.userId);
     const accountSnap = await txn.get(accountRef);

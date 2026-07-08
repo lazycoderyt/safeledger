@@ -51,6 +51,7 @@ const STATUS_STYLES = {
   },
   Pending: { icon: Clock, className: "bg-amber-50 text-amber-700" },
   Failed: { icon: XCircle, className: "bg-rose-50 text-rose-700" },
+  Rejected: { icon: XCircle, className: "bg-rose-50 text-rose-700" },
 };
 
 function formatCurrency(amount, currency = "USD") {

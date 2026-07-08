@@ -13,13 +13,15 @@ import {
   WifiOff,
   KeyRound,
   MessageCircle,
+  Clock,
+  Landmark,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/libs/firebase";
 import { useTransactionStatus } from "@/utils/useTransactionStatus";
 import {
-  recordTransaction,
-  verifyTransferPassword,
+  initiateTransferRequest,
+  verifyTransferPin,
   ACCOUNT_NUMBER_PATTERN,
 } from "@/utils/authHelper";
 
@@ -35,15 +37,14 @@ import {
  * the guard is re-checked again at submit time as a safety net against
  * a stale snapshot.
  *
- * A completed transfer is recorded as an ordinary debit via
- * recordTransaction(), so it goes through the exact same atomic
- * balance/metrics update (and insufficient-funds guard) as every other
- * transaction in the app — nothing special-cased here.
- *
- * Every transfer also requires the account password to be re-entered
- * and verified fresh against Firebase Auth (verifyTransferPassword,
- * step-up authentication) immediately before the debit is recorded —
- * a stale login session alone is never enough to move money.
+ * Every transfer is confirmed with the user's 4-digit transfer PIN
+ * (verifyTransferPin — step-up authentication, set once at sign-up)
+ * and submitted via initiateTransferRequest(), which places the funds
+ * on HOLD rather than completing the transfer immediately: no
+ * transfer settles until an admin reviews and approves it from
+ * /dashboard/admin/transactions. The submitted transaction sits with
+ * status "Pending" until that happens — see initiateTransferRequest's
+ * own doc comment in authHelper.js for exactly how the hold works.
  */
 
 const TONE_ICON = {
@@ -149,9 +150,13 @@ export default function WireTransferPage() {
 
   const [recipientName, setRecipientName] = useState("");
   const [recipientAccountNumber, setRecipientAccountNumber] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [bankAddress, setBankAddress] = useState("");
+  const [iban, setIban] = useState("");
+  const [swiftCode, setSwiftCode] = useState("");
   const [amount, setAmount] = useState("");
   const [memo, setMemo] = useState("");
-  const [transferPassword, setTransferPassword] = useState("");
+  const [transferPin, setTransferPin] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
@@ -185,6 +190,10 @@ export default function WireTransferPage() {
 
     const trimmedName = recipientName.trim();
     const trimmedAccountNumber = recipientAccountNumber.trim();
+    const trimmedBankName = bankName.trim();
+    const trimmedBankAddress = bankAddress.trim();
+    const trimmedIban = iban.trim().toUpperCase();
+    const trimmedSwift = swiftCode.trim().toUpperCase();
 
     if (!trimmedName) {
       setFormError("Enter the recipient's name.");
@@ -196,6 +205,14 @@ export default function WireTransferPage() {
       );
       return;
     }
+    if (!trimmedBankName) {
+      setFormError("Enter the recipient's bank name.");
+      return;
+    }
+    if (!trimmedBankAddress) {
+      setFormError("Enter the recipient bank's address.");
+      return;
+    }
     if (!numericAmount || numericAmount <= 0) {
       setFormError("Enter an amount greater than zero.");
       return;
@@ -204,45 +221,53 @@ export default function WireTransferPage() {
       setFormError("This transfer exceeds your available balance.");
       return;
     }
-    if (!transferPassword) {
-      setFormError("Enter your transfer password to confirm this transfer.");
+    if (!/^\d{4}$/.test(transferPin)) {
+      setFormError("Enter your 4-digit transfer PIN to confirm this transfer.");
       return;
     }
 
     setSubmitting(true);
     try {
       // Step-up authentication: every transfer must be confirmed with
-      // the account password, re-verified fresh against Firebase Auth
-      // right here — never just checked once at sign-in.
-      await verifyTransferPassword(transferPassword);
+      // the transfer PIN created at sign-up, re-verified fresh right
+      // here — never just checked once at sign-in.
+      await verifyTransferPin(user.uid, transferPin);
 
       const last4 = trimmedAccountNumber.slice(-4);
       const description = memo.trim()
         ? `Wire to ${trimmedName} (••••${last4}) — ${memo.trim()}`
         : `Wire to ${trimmedName} (••••${last4})`;
 
-      const { balanceAfter } = await recordTransaction(user.uid, {
-        type: "debit",
+      const { balanceAfter } = await initiateTransferRequest(user.uid, {
         amount: numericAmount,
         description,
-        category: "Transfer",
-        status: "Completed",
+        recipientName: trimmedName,
+        recipientAccountNumber: trimmedAccountNumber,
+        bankName: trimmedBankName,
+        bankAddress: trimmedBankAddress,
+        iban: trimmedIban,
+        swiftCode: trimmedSwift,
+        memo: memo.trim(),
       });
 
       setResult({ balanceAfter });
       setRecipientName("");
       setRecipientAccountNumber("");
+      setBankName("");
+      setBankAddress("");
+      setIban("");
+      setSwiftCode("");
       setAmount("");
       setMemo("");
-      setTransferPassword("");
+      setTransferPin("");
     } catch (err) {
       console.error("Failed to send transfer:", err);
-      // Always clear the password field on failure — never leave a
-      // typed password sitting in state after a failed attempt,
-      // whether it was the password itself or the transfer that failed.
-      setTransferPassword("");
+      // Always clear the PIN field on failure — never leave a typed
+      // PIN sitting in state after a failed attempt, whether it was
+      // the PIN itself or the transfer that failed.
+      setTransferPin("");
       setFormError(
-        err.message || "Couldn't send this transfer. Please try again.",
+        err.message || "Couldn't submit this transfer. Please try again.",
       );
     } finally {
       setSubmitting(false);
@@ -257,7 +282,8 @@ export default function WireTransferPage() {
           Wire Transfer
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Send funds from your Apex Global account to another account.
+          Send funds from your Apex Global account to another bank account.
+          Every transfer is reviewed by our team before it settles.
         </p>
       </div>
 
@@ -294,9 +320,10 @@ export default function WireTransferPage() {
             </Banner>
           )}
           {result && (
-            <Banner tone="success" icon={CheckCircle2}>
-              Transfer sent. Your new available balance is{" "}
-              {formatCurrency(result.balanceAfter)}.
+            <Banner tone="success" icon={Clock}>
+              Transfer submitted and is now pending.Your available balance is on
+              hold at {formatCurrency(result.balanceAfter)} until it&rsquo;s
+              reviewed.
             </Banner>
           )}
 
@@ -356,6 +383,107 @@ export default function WireTransferPage() {
                 />
               </div>
 
+              <div className="sm:col-span-2 flex items-center gap-2 pt-1">
+                <Landmark
+                  className="h-4 w-4 text-slate-400"
+                  aria-hidden="true"
+                />
+                <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+                  Recipient Bank Details
+                </p>
+              </div>
+
+              <div className="sm:col-span-2">
+                <label
+                  htmlFor="bankName"
+                  className="text-xs font-semibold uppercase tracking-widest text-slate-500"
+                >
+                  Bank Name
+                </label>
+                <input
+                  id="bankName"
+                  type="text"
+                  value={bankName}
+                  onChange={(e) => setBankName(e.target.value)}
+                  placeholder="e.g. First National Bank"
+                  autoComplete="off"
+                  autoCapitalize="words"
+                  disabled={submitting}
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600 disabled:opacity-60"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label
+                  htmlFor="bankAddress"
+                  className="text-xs font-semibold uppercase tracking-widest text-slate-500"
+                >
+                  Bank Address
+                </label>
+                <input
+                  id="bankAddress"
+                  type="text"
+                  value={bankAddress}
+                  onChange={(e) => setBankAddress(e.target.value)}
+                  placeholder="Street, city, country"
+                  autoComplete="off"
+                  disabled={submitting}
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600 disabled:opacity-60"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="iban"
+                  className="text-xs font-semibold uppercase tracking-widest text-slate-500"
+                >
+                  IBAN{" "}
+                  <span className="normal-case text-slate-400">(optional)</span>
+                </label>
+                <input
+                  id="iban"
+                  type="text"
+                  value={iban}
+                  onChange={(e) =>
+                    setIban(e.target.value.toUpperCase().slice(0, 34))
+                  }
+                  placeholder="e.g. GB29 NWBK 6016 1331 9268 19"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="characters"
+                  spellCheck="false"
+                  maxLength={34}
+                  disabled={submitting}
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base tracking-wide text-slate-900 placeholder:text-slate-400 placeholder:tracking-normal focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600 disabled:opacity-60"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="swiftCode"
+                  className="text-xs font-semibold uppercase tracking-widest text-slate-500"
+                >
+                  SWIFT / BIC{" "}
+                  <span className="normal-case text-slate-400">(optional)</span>
+                </label>
+                <input
+                  id="swiftCode"
+                  type="text"
+                  value={swiftCode}
+                  onChange={(e) =>
+                    setSwiftCode(e.target.value.toUpperCase().slice(0, 11))
+                  }
+                  placeholder="e.g. NWBKGB2L"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="characters"
+                  spellCheck="false"
+                  maxLength={11}
+                  disabled={submitting}
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base tracking-wide text-slate-900 placeholder:text-slate-400 placeholder:tracking-normal focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600 disabled:opacity-60"
+                />
+              </div>
+
               <div>
                 <label
                   htmlFor="amount"
@@ -401,10 +529,10 @@ export default function WireTransferPage() {
 
               <div className="sm:col-span-2">
                 <label
-                  htmlFor="transferPassword"
+                  htmlFor="transferPin"
                   className="text-xs font-semibold uppercase tracking-widest text-slate-500"
                 >
-                  Transfer Password
+                  Transfer PIN
                 </label>
                 <div className="mt-2 flex items-center rounded-xl border border-slate-200 bg-white px-4 focus-within:border-blue-600 focus-within:ring-1 focus-within:ring-blue-600">
                   <KeyRound
@@ -412,19 +540,26 @@ export default function WireTransferPage() {
                     aria-hidden="true"
                   />
                   <input
-                    id="transferPassword"
+                    id="transferPin"
                     type="password"
-                    value={transferPassword}
-                    onChange={(e) => setTransferPassword(e.target.value)}
-                    placeholder="Your account password"
-                    autoComplete="current-password"
+                    inputMode="numeric"
+                    pattern="\d*"
+                    autoComplete="off"
+                    maxLength={4}
+                    value={transferPin}
+                    onChange={(e) =>
+                      setTransferPin(
+                        e.target.value.replace(/\D/g, "").slice(0, 4),
+                      )
+                    }
+                    placeholder="4-digit PIN"
                     disabled={submitting}
-                    className="w-full bg-transparent px-3 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none disabled:opacity-60"
+                    className="w-full bg-transparent px-3 py-3 text-base tracking-[0.3em] text-slate-900 placeholder:tracking-normal placeholder:text-slate-400 focus:outline-none disabled:opacity-60"
                   />
                 </div>
                 <p className="mt-1.5 text-xs text-slate-400">
-                  Confirm every transfer with your account password — required
-                  for security.
+                  Confirm every transfer with your 4-digit transfer PIN —
+                  required for security.
                 </p>
               </div>
             </div>
@@ -440,12 +575,12 @@ export default function WireTransferPage() {
                     className="h-4 w-4 animate-spin"
                     aria-hidden="true"
                   />
-                  Sending
+                  Submitting
                 </>
               ) : (
                 <>
                   <Send className="h-4 w-4" aria-hidden="true" />
-                  Send Transfer
+                  Submit Transfer
                 </>
               )}
             </button>

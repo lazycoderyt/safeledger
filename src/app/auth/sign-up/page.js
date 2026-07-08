@@ -25,6 +25,7 @@ import {
   Wallet,
   ChevronDown,
   Check,
+  KeyRound,
 } from "lucide-react";
 import { signUpUser } from "@/utils/authHelper";
 import { formatAccountNumberDisplay } from "@/utils/Cryptogenacc";
@@ -89,6 +90,8 @@ const INITIAL_FORM = {
   country: "",
   mobileNumber: "",
   accountType: "",
+  transferPin: "",
+  transferPinConfirm: "",
 };
 
 function FieldShell({ icon: Icon, children }) {
@@ -112,6 +115,13 @@ export default function RegisterPage() {
 
   function handleChange(e) {
     const { name, value } = e.target;
+    if (name === "transferPin" || name === "transferPinConfirm") {
+      setForm((prev) => ({
+        ...prev,
+        [name]: value.replace(/\D/g, "").slice(0, 4),
+      }));
+      return;
+    }
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
@@ -167,6 +177,21 @@ export default function RegisterPage() {
       return;
     }
 
+    if (!/^\d{4}$/.test(form.transferPin)) {
+      setError("Create a 4-digit transfer PIN.");
+      return;
+    }
+    if (form.transferPin !== form.transferPinConfirm) {
+      setError("Your transfer PIN and confirmation don't match.");
+      return;
+    }
+    if (/^(\d)\1{3}$/.test(form.transferPin)) {
+      setError(
+        "Choose a less predictable PIN — repeated digits like 1111 aren't allowed.",
+      );
+      return;
+    }
+
     setLoading(true);
     try {
       const { accountNumber } = await signUpUser(
@@ -179,6 +204,7 @@ export default function RegisterPage() {
           country: form.country,
           mobileNumber: form.mobileNumber.trim(),
           accountType: form.accountType,
+          transferPin: form.transferPin,
         },
       );
       setAccount({ accountNumber });
@@ -631,6 +657,61 @@ export default function RegisterPage() {
                       />
                     </FieldShell>
                   </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label
+                        htmlFor="transferPin"
+                        className="text-xs font-semibold uppercase tracking-widest text-slate-500"
+                      >
+                        Transfer PIN
+                      </label>
+                      <FieldShell icon={KeyRound}>
+                        <input
+                          id="transferPin"
+                          name="transferPin"
+                          type="password"
+                          inputMode="numeric"
+                          pattern="\d*"
+                          autoComplete="off"
+                          maxLength={4}
+                          value={form.transferPin}
+                          onChange={handleChange}
+                          placeholder="4 digits"
+                          className="w-full bg-transparent px-3 py-3 text-sm tracking-[0.3em] text-[#0F172A] placeholder:tracking-normal placeholder:text-slate-400 focus:outline-none"
+                        />
+                      </FieldShell>
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="transferPinConfirm"
+                        className="text-xs font-semibold uppercase tracking-widest text-slate-500"
+                      >
+                        Confirm PIN
+                      </label>
+                      <FieldShell icon={KeyRound}>
+                        <input
+                          id="transferPinConfirm"
+                          name="transferPinConfirm"
+                          type="password"
+                          inputMode="numeric"
+                          pattern="\d*"
+                          autoComplete="off"
+                          maxLength={4}
+                          value={form.transferPinConfirm}
+                          onChange={handleChange}
+                          placeholder="Re-enter"
+                          className="w-full bg-transparent px-3 py-3 text-sm tracking-[0.3em] text-[#0F172A] placeholder:tracking-normal placeholder:text-slate-400 focus:outline-none"
+                        />
+                      </FieldShell>
+                    </div>
+                  </div>
+                  <p className="-mt-2 text-xs leading-relaxed text-slate-400">
+                    You&rsquo;ll enter this 4-digit PIN to confirm every
+                    transfer — separate from your login password, and never
+                    shown or emailed back to you.
+                  </p>
 
                   <div className="flex items-center gap-3 pt-1">
                     <button
