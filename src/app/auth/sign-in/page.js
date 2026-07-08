@@ -59,6 +59,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await loginUser(email.trim(), password);
+      router.refresh();
       router.replace("/dashboard");
     } catch (err) {
       setError(mapAuthError(err));
