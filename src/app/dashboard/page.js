@@ -1,5 +1,5 @@
-// src/app/dashboard/page.jsx
 "use client";
+export const dynamic = "force-dynamic";
 
 import { useEffect } from "react";
 import { useAuth } from "@/context/AuthContext"; // Adjusted path matching your new context file
