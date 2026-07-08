@@ -101,7 +101,7 @@ export default function AdminUsersPage() {
           All Users
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          View and manage every registered SafeLedger user.
+          View and manage every registered Apex Global user.
         </p>
       </div>
 

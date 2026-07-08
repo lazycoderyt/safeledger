@@ -156,7 +156,7 @@ export default function RegisterPage() {
     const age = calculateAge(dateOfBirth);
     if (age === null || age < 18) {
       setError(
-        "You must be at least 18 years old to open a SafeLedger account.",
+        "You must be at least 18 years old to open a Apex Global account.",
       );
       return;
     }
@@ -207,13 +207,13 @@ export default function RegisterPage() {
         <div className="flex items-center gap-2.5">
           <Image
             src="/icon.png"
-            alt="SafeLedger"
+            alt="Apex Global"
             width={36}
             height={36}
             className="rounded-md"
           />
           <span className="text-lg font-bold tracking-tight text-white">
-            SafeLedger
+            Apex Global
           </span>
         </div>
 
@@ -225,7 +225,7 @@ export default function RegisterPage() {
             Open an account built for capital that moves.
           </h1>
           <p className="mt-4 text-sm leading-relaxed text-slate-400">
-            Every SafeLedger account is provisioned with a dedicated US account
+            Every Apex Global account is provisioned with a dedicated US account
             number, encrypted from the first keystroke.
           </p>
         </div>
@@ -250,7 +250,7 @@ export default function RegisterPage() {
         aria-label={
           account
             ? "Account created successfully"
-            : "Create your SafeLedger account"
+            : "Create your Apex Global account"
         }
         className="flex items-center justify-center px-6 py-16 sm:px-10"
       >
@@ -259,13 +259,13 @@ export default function RegisterPage() {
           <div className="mb-10 flex items-center gap-2.5 lg:hidden">
             <Image
               src="/icon.png"
-              alt="SafeLedger"
+              alt="Apex Global"
               width={32}
               height={32}
               className="rounded-md"
             />
             <span className="text-lg font-bold tracking-tight text-[#0F172A]">
-              SafeLedger
+              Apex Global
             </span>
           </div>
 

@@ -12,7 +12,7 @@ const FOOTER_NAVIGATION = {
     { name: "Compliance Auditing", href: "#" },
   ],
   institution: [
-    { name: "About SafeLedger", href: "#" },
+    { name: "About Apex Global", href: "#" },
     { name: "Security Architecture", href: "#" },
     { name: "Regulatory Compliance", href: "#" },
     { name: "Investor Relations", href: "#" },
@@ -34,7 +34,7 @@ export default function Footer() {
 
   return (
     <footer
-      aria-label="SafeLedger Institutional Footer"
+      aria-label="Apex Global Institutional Footer"
       className="bg-[#0F172A] border-t border-slate-800 text-slate-400"
     >
       <div className="mx-auto max-w-7xl px-6 lg:px-8 pt-16 pb-12">
@@ -48,7 +48,7 @@ export default function Footer() {
                 <ShieldCheck className="h-4 w-4 text-white" />
               </span>
               <span className="text-lg font-black tracking-tight uppercase">
-                SafeLedger
+                Apex Global
               </span>
             </div>
             <p className="mt-4 text-sm leading-relaxed text-slate-400">
@@ -65,7 +65,7 @@ export default function Footer() {
                   <a
                     key={social.name}
                     href={social.href}
-                    aria-label={`Follow SafeLedger on ${social.name}`}
+                    aria-label={`Follow Apex Global on ${social.name}`}
                     className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700 transition-colors"
                   >
                     <Icon className="h-4 w-4" />
@@ -136,11 +136,11 @@ export default function Footer() {
         {/* ---------- Regulatory Compliance & Legal Footnotes ---------- */}
         <div className="mt-12 space-y-6 text-[11px] leading-relaxed text-slate-500">
           <p>
-            SafeLedger is a corporate financial solutions architecture platform.
-            Banking services are provided by partner institutional banks,
-            members FDIC. Letters of Credit and underwritten trade instruments
-            are cleared in coordination with authorized sovereign customs
-            authorities and corresponding clearance banking clearings.
+            Apex Global is a corporate financial solutions architecture
+            platform. Banking services are provided by partner institutional
+            banks, members FDIC. Letters of Credit and underwritten trade
+            instruments are cleared in coordination with authorized sovereign
+            customs authorities and corresponding clearance banking clearings.
           </p>
           <p>
             Deposits are eligible for FDIC pass-through insurance up to defined
@@ -153,7 +153,7 @@ export default function Footer() {
           {/* Bottom Copyright & Terms Sub-Flex */}
           <div className="pt-6 border-t border-slate-900 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
             <p>
-              &copy; {currentYear} SafeLedger Systems Inc. All sovereign rights
+              &copy; {currentYear} Apex Global Systems Inc. All sovereign rights
               reserved.
             </p>
             <div className="flex items-center gap-6">

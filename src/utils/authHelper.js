@@ -8,6 +8,8 @@ import {
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
 } from "firebase/auth";
 import {
   doc,
@@ -222,6 +224,54 @@ export async function updateCardSettings(userId, variant, updates) {
   if (!userId) throw new Error("updateCardSettings requires a userId.");
   const cardRef = doc(db, "cards", getCardDocId(userId, variant));
   await updateDoc(cardRef, { ...updates, updatedAt: serverTimestamp() });
+}
+
+/**
+ * Step-up authentication for money-movement actions (wire transfers,
+ * bill payments, loan settlements): re-verifies the signed-in user's
+ * own account password against Firebase Auth via reauthentication —
+ * the standard way to confirm "it's really you" for a sensitive action
+ * without maintaining a second, separate password/PIN system.
+ *
+ * Throws with a message safe to show directly in the UI. Callers
+ * should require this to succeed before touching the ledger.
+ *
+ * @param {string} password - The password as typed by the user.
+ * @returns {Promise<void>}
+ */
+export async function verifyTransferPassword(password) {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    throw new Error("You need to be signed in to do this.");
+  }
+  if (!password) {
+    throw new Error("Enter your account password to continue.");
+  }
+
+  try {
+    const credential = EmailAuthProvider.credential(
+      currentUser.email,
+      password,
+    );
+    await reauthenticateWithCredential(currentUser, credential);
+  } catch (err) {
+    if (
+      err?.code === "auth/wrong-password" ||
+      err?.code === "auth/invalid-credential"
+    ) {
+      throw new Error("That password is incorrect. Please try again.");
+    }
+    if (err?.code === "auth/too-many-requests") {
+      throw new Error(
+        "Too many attempts. Please wait a moment before trying again.",
+      );
+    }
+    if (err?.code === "auth/network-request-failed") {
+      throw new Error("Network error. Check your connection and try again.");
+    }
+    console.error("Transfer password verification failed:", err);
+    throw new Error("Couldn't verify your password. Please try again.");
+  }
 }
 
 /**
@@ -1208,7 +1258,7 @@ export async function sendChatMessage(userId, message) {
 
   const resolvedSenderName =
     (senderName || "").trim() ||
-    (senderRole === "admin" ? "SafeLedger Support" : "Member");
+    (senderRole === "admin" ? "Apex Global Support" : "Member");
 
   await addDoc(collection(db, "chats", userId, "messages"), {
     senderUid,

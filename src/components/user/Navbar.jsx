@@ -14,6 +14,7 @@ import {
   Home,
   Send,
   Receipt,
+  FileText,
   Settings,
   Menu,
   X,
@@ -28,7 +29,7 @@ import { useChatThreadMeta } from "@/utils/useChatThreadMeta";
 
 /**
  * components/user/Navbar.jsx
- * Responsive dashboard sidebar for SafeLedger — clean, trustworthy
+ * Responsive dashboard sidebar for Apex Global — clean, trustworthy
  * corporate white theme.
  * Desktop (md+): fixed left column, w-64, full height.
  * Mobile (<md): top utility bar + sliding drawer with backdrop.
@@ -53,6 +54,11 @@ const NAV_BLOCKS = [
         label: "Account Analytics",
         href: "/dashboard/user/accounts",
         icon: BarChart3,
+      },
+      {
+        label: "Account Statement",
+        href: "/dashboard/user/statement",
+        icon: FileText,
       },
     ],
   },
@@ -419,13 +425,13 @@ function BrandMark() {
     <div className="flex items-center gap-2.5">
       <Image
         src="/icon.png"
-        alt="SafeLedger"
+        alt="Apex Global"
         width={32}
         height={32}
         className="h-8 w-8 rounded-md"
       />
       <span className="text-sm font-bold tracking-tight text-slate-900">
-        SafeLedger
+        Apex Global
       </span>
     </div>
   );

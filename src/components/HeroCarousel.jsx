@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { ChevronLeft, ChevronRight, ShieldCheck } from "lucide-react";
 
 /**
- * HeroCarousel — image-led hero carousel for SafeLedger.
+ * HeroCarousel — image-led hero carousel for Apex Global.
  * Sits directly below the fixed Navbar, above the rest of the page content.
  * Stack: Next.js + Tailwind CSS + lucide-react
  */

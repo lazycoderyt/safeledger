@@ -179,7 +179,7 @@ export default function Hero() {
             </h1>
 
             <p className="mt-6 max-w-xl text-base sm:text-lg text-slate-500 leading-relaxed">
-              SafeLedger provides enterprise-tier custody, absolute real-time
+              Apex Global provides enterprise-tier custody, absolute real-time
               clearing rails, and programmatic treasury execution. Deploy
               capital across global markets with unyielding structural
               compliance.

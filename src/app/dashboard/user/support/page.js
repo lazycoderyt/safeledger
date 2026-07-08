@@ -19,7 +19,7 @@ import {
 
 /**
  * app/dashboard/user/support/page.js
- * Live chat with the SafeLedger support team — one thread per member,
+ * Live chat with the Apex Global support team — one thread per member,
  * visible to any admin from /dashboard/admin/messages.
  *
  * The message list scrolls inside a height-bounded panel rather than
@@ -196,7 +196,7 @@ export default function SupportChatPage() {
           Support Chat
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Message the SafeLedger support team directly — we typically reply
+          Message the Apex Global support team directly — we typically reply
           within one business day.
         </p>
       </div>

@@ -74,13 +74,13 @@ export default function LoginPage() {
         <div className="flex items-center gap-2.5">
           <Image
             src="/icon.png"
-            alt="SafeLedger"
+            alt="Apex Global"
             width={36}
             height={36}
             className="rounded-md"
           />
           <span className="text-lg font-bold tracking-tight text-white">
-            SafeLedger
+            Apex Global
           </span>
         </div>
 
@@ -114,7 +114,7 @@ export default function LoginPage() {
 
       {/* Right — form panel */}
       <section
-        aria-label="Sign in to SafeLedger"
+        aria-label="Sign in to Apex Global"
         className="flex items-center justify-center px-6 py-16 sm:px-10"
       >
         <div className="w-full max-w-md">
@@ -122,13 +122,13 @@ export default function LoginPage() {
           <div className="mb-10 flex items-center gap-2.5 lg:hidden">
             <Image
               src="/icon.png"
-              alt="SafeLedger"
+              alt="Apex Global"
               width={32}
               height={32}
               className="rounded-md"
             />
             <span className="text-lg font-bold tracking-tight text-[#0F172A]">
-              SafeLedger
+              Apex Global
             </span>
           </div>
 

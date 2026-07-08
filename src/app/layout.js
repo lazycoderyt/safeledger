@@ -12,19 +12,24 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// Correct and expanded metadata configuration
 export const metadata = {
   title: {
-    default: "Safe Ledger",
-    template: "%s | Safe Ledger", // Allows inner pages to dynamically show "Dashboard | Safe Ledger"
+    default: "Apex Global",
+    template: "%s | Apex Global",
   },
   description:
-    "Securely track, manage, and audit your financial records with confidence.",
+    "Apex Global — secure digital banking for accounts, transfers, cards, and loans.",
   icons: {
-    icon: "/icon.png", // Correct path pointing directly to your public/icon.png
+    icon: "/icon.png",
     shortcut: "/icon.png",
-    apple: "/icon.png", // Standard fallback for iOS home screen bookmarks
+    apple: "/icon.png",
   },
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#ffffff",
 };
 
 export default function RootLayout({ children }) {

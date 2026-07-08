@@ -46,7 +46,7 @@ export default function VirtualCard({
 
               <div className="flex items-start justify-between">
                 <span className="bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-300 bg-clip-text text-transparent text-lg font-bold tracking-tight">
-                  SafeLedger
+                  Apex Global
                 </span>
                 <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
                   {cardLabel}

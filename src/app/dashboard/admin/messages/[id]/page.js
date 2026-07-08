@@ -138,7 +138,7 @@ export default function AdminChatThreadPage() {
       await sendChatMessage(userId, {
         senderUid: currentAdmin.uid,
         senderRole: "admin",
-        senderName: "SafeLedger Support",
+        senderName: "Apex Global Support",
         text: trimmed,
       });
       setText("");

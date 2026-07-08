@@ -51,7 +51,7 @@ const SERVICES = [
 export default function AboutServices() {
   return (
     <section
-      aria-label="About SafeLedger and core solutions"
+      aria-label="About Apex Global and core solutions"
       className="bg-white border-t border-[#E2E8F0]"
     >
       <div className="mx-auto max-w-7xl px-6 lg:px-8 py-20 sm:py-24">
@@ -68,7 +68,7 @@ export default function AboutServices() {
 
           <div className="space-y-5 lg:pt-2">
             <p className="text-base sm:text-lg text-slate-600 leading-relaxed">
-              SafeLedger anchors cross-border trade at institutional scale,
+              Apex Global anchors cross-border trade at institutional scale,
               combining multi-billion dollar banking liquidity with the
               operational precision of frictionless asset movement. Capital and
               cargo move on a single, unified ledger.

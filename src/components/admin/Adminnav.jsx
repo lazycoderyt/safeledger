@@ -116,14 +116,14 @@ function BrandMark() {
     <div className="flex items-center gap-2.5">
       <Image
         src="/icon.png"
-        alt="SafeLedger"
+        alt="Apex Global"
         width={32}
         height={32}
         className="h-8 w-8 rounded-md"
       />
       <div className="flex items-center gap-2">
         <span className="text-sm font-bold tracking-tight text-slate-900">
-          SafeLedger
+          Apex Global
         </span>
         <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-700">
           Admin

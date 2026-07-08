@@ -10,7 +10,7 @@ const NAV_LINKS = [
 ];
 
 /**
- * Navbar — fixed top navigation for SafeLedger
+ * Navbar — fixed top navigation for Apex Global
  * Stack: Next.js + Tailwind CSS + lucide-react
  */
 export default function Navbar() {
@@ -26,7 +26,7 @@ export default function Navbar() {
               <img src="/icon.png" />
             </span>
             <span className="text-lg font-bold tracking-tight text-[#0F172A]">
-              SafeLedger
+              Apex Global
             </span>
           </a>
 

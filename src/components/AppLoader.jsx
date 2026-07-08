@@ -2,7 +2,7 @@ import Image from "next/image";
 
 /**
  * components/AppLoader.jsx
- * The one loading screen for the whole app: the SafeLedger icon
+ * The one loading screen for the whole app: the Apex Global icon
  * centered on a white background with a spinner ring turning around
  * it. Used two ways:
  *

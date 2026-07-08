@@ -39,7 +39,7 @@ const CASE_STUDIES = [
   {
     id: "maritime-alpha",
     quote:
-      "Transitioning our cross-border clearing to SafeLedger reduced our letter-of-credit processing latency from 4 days to less than 11 minutes. The combination of liquid capital alignment and instant vessel custody status is unparalleled.",
+      "Transitioning our cross-border clearing to Apex Global reduced our letter-of-credit processing latency from 4 days to less than 11 minutes. The combination of liquid capital alignment and instant vessel custody status is unparalleled.",
     author: "Eleanor Vance",
     role: "VP of Global Treasury",
     company: "Vanguard Shipping Group",
@@ -48,7 +48,7 @@ const CASE_STUDIES = [
   {
     id: "capital-beta",
     quote:
-      "In institutional trade finance, visibility is risk. SafeLedger gives our compliance and logistics arms a single source of truth. We are executing multi-currency clearing cycles with absolute structural confidence.",
+      "In institutional trade finance, visibility is risk. Apex Global gives our compliance and logistics arms a single source of truth. We are executing multi-currency clearing cycles with absolute structural confidence.",
     author: "Marcus Sterling",
     role: "Chief Risk Officer",
     company: "Apex Commodities International",
@@ -73,7 +73,7 @@ export default function CustomerSatisfaction() {
           </h2>
           <p className="mt-4 text-base sm:text-lg text-slate-500 max-w-2xl">
             We measure our success by the absolute stability and velocity of
-            your supply chain capital. SafeLedger is independently verified to
+            your supply chain capital. Apex Global is independently verified to
             ensure continuous operational excellence.
           </p>
         </div>

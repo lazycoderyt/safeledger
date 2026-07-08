@@ -228,7 +228,7 @@ export default function AdminDashboardPage() {
           Admin Dashboard
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Oversight and controls for the SafeLedger platform.
+          Oversight and controls for the Apex Global platform.
         </p>
       </div>
 

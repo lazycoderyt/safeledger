@@ -41,7 +41,7 @@ function TaxRefundBanner() {
             Claim your IRS tax refund
           </h2>
           <p className="mt-1 text-sm text-slate-600">
-            Have your refund deposited directly into your SafeLedger account —
+            Have your refund deposited directly into your Apex Global account —
             no waiting on a paper check.
           </p>
         </div>
