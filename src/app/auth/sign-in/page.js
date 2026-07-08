@@ -59,7 +59,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await loginUser(email.trim(), password);
-      router.push("/dashboard");
+      await router.push("/dashboard");
     } catch (err) {
       setError(mapAuthError(err));
     } finally {
