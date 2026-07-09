@@ -204,7 +204,11 @@ export default function AccountAnalyticsPage() {
               </p>
               <div className="mt-5">
                 <CategoryBreakdownChart
-                  categories={categoryBreakdown}
+                  categories={
+                    categoryBreakdown == "Admin Adjustment"
+                      ? "Credits"
+                      : categoryBreakdown
+                  }
                   grandTotal={categoryGrandTotal}
                 />
               </div>

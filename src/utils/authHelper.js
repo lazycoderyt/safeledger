@@ -26,6 +26,7 @@ import { auth, db } from "@/libs/firebase";
 import {
   generateUSAccountNumber,
   generateCardDetails,
+  generateTransactionId,
 } from "@/utils/Cryptogenacc";
 import { calculateMonthlyPayment } from "@/utils/loanCalculations";
 import { setSessionCookie, clearSessionCookie } from "@/utils/session";
@@ -1031,8 +1032,15 @@ export async function updateUserRole(userId, role, actingAdminUid) {
  * @param {string} [details.category]
  * @param {"Completed"|"Pending"|"Failed"} [details.status]
  * @param {Date} details.transactionDate - The admin-chosen date/time.
+ * @param {string} [details.transactionId] - Human-readable reference
+ *   (e.g. "TXN-20260709-7K3M9QXZ"). Generated automatically via
+ *   generateTransactionId() if omitted — never left blank.
+ * @param {string} [details.bankName]
+ * @param {string} [details.senderName]
+ * @param {string} [details.senderAccountNumber]
+ * @param {string} [details.paymentMethod] - e.g. "Wire Transfer", "ACH"
  * @param {string} adminUid - uid of the admin performing the action.
- * @returns {Promise<{ id: string, balanceAfter: number }>}
+ * @returns {Promise<{ id: string, balanceAfter: number, transactionId: string }>}
  */
 export async function adminCreateTransaction(userId, details, adminUid) {
   const {
@@ -1042,7 +1050,14 @@ export async function adminCreateTransaction(userId, details, adminUid) {
     category = "General",
     status = "Completed",
     transactionDate,
+    transactionId,
+    bankName = "",
+    senderName = "",
+    senderAccountNumber = "",
+    paymentMethod = "",
   } = details || {};
+
+  const resolvedTransactionId = transactionId || generateTransactionId();
 
   if (!userId) throw new Error("adminCreateTransaction requires a userId.");
   if (type !== "credit" && type !== "debit") {
@@ -1119,12 +1134,21 @@ export async function adminCreateTransaction(userId, details, adminUid) {
       createdAt: Timestamp.fromDate(transactionDate),
       adminCreated: true,
       lastEditedBy: adminUid || null,
+      transactionId: resolvedTransactionId,
+      bankName,
+      senderName,
+      senderAccountNumber,
+      paymentMethod,
     });
 
     return isFailed ? currentAvailable : nextAvailable;
   });
 
-  return { id: transactionRef.id, balanceAfter };
+  return {
+    id: transactionRef.id,
+    balanceAfter,
+    transactionId: resolvedTransactionId,
+  };
 }
 
 /**

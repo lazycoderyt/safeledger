@@ -10,9 +10,13 @@ import {
   Loader2,
   AlertCircle,
   CheckCircle2,
+  RefreshCw,
+  Hash,
+  Landmark,
 } from "lucide-react";
 import { useAdminUserDirectory } from "@/utils/useAdminUserDirectory";
 import { adminCreateTransaction } from "@/utils/authHelper";
+import { generateTransactionId } from "@/utils/Cryptogenacc";
 import { useAuth } from "@/context/AuthContext";
 
 /**
@@ -21,6 +25,12 @@ import { useAuth } from "@/context/AuthContext";
  * date/time (backdating supported). Goes through
  * adminCreateTransaction(), which applies the same atomic
  * balance/metrics update every other transaction in the app uses.
+ *
+ * The Transaction ID is generated client-side via
+ * generateTransactionId() the moment this page loads (and can be
+ * regenerated) — the admin sees the exact reference that will be
+ * saved before they submit, rather than one being assigned silently
+ * after the fact.
  */
 
 const CATEGORY_OPTIONS = [
@@ -32,7 +42,17 @@ const CATEGORY_OPTIONS = [
   "Fuel",
   "Refund",
   "Transfer",
-  "Admin Adjustment",
+  "Admin Balance Credit",
+];
+
+const PAYMENT_METHOD_OPTIONS = [
+  "Wire Transfer",
+  "ACH Transfer",
+  "Card Payment",
+  "Cash Deposit",
+  "Check",
+  "Internal Transfer",
+  "Other",
 ];
 
 const STATUS_OPTIONS = ["Completed", "Pending", "Failed"];
@@ -57,10 +77,18 @@ export default function AdminNewTransactionPage() {
   const [dateValue, setDateValue] = useState(() =>
     toDatetimeLocalValue(new Date()),
   );
+  const [transactionId, setTransactionId] = useState(() =>
+    generateTransactionId(),
+  );
+  const [bankName, setBankName] = useState("");
+  const [senderName, setSenderName] = useState("");
+  const [senderAccountNumber, setSenderAccountNumber] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState(PAYMENT_METHOD_OPTIONS[0]);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [lastCreatedId, setLastCreatedId] = useState("");
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -98,12 +126,22 @@ export default function AdminNewTransactionPage() {
           category,
           status,
           transactionDate,
+          transactionId,
+          bankName: bankName.trim(),
+          senderName: senderName.trim(),
+          senderAccountNumber: senderAccountNumber.trim(),
+          paymentMethod,
         },
         currentAdmin?.uid,
       );
       setSuccess(true);
+      setLastCreatedId(transactionId);
       setAmount("");
       setDescription("");
+      setBankName("");
+      setSenderName("");
+      setSenderAccountNumber("");
+      setTransactionId(generateTransactionId());
     } catch (err) {
       console.error("Failed to create transaction:", err);
       setError(
@@ -155,7 +193,8 @@ export default function AdminNewTransactionPage() {
             aria-hidden="true"
           />
           <p className="text-sm text-emerald-700">
-            Transaction created.{" "}
+            Transaction created with reference{" "}
+            <span className="font-mono font-semibold">{lastCreatedId}</span>.{" "}
             <button
               type="button"
               onClick={() => router.push("/dashboard/admin/transactions")}
@@ -307,6 +346,137 @@ export default function AdminNewTransactionPage() {
               Defaults to now — set an earlier date to backdate this
               transaction.
             </p>
+          </div>
+
+          <div className="sm:col-span-2">
+            <label
+              htmlFor="transactionId"
+              className="text-xs font-semibold uppercase tracking-widest text-slate-500"
+            >
+              Transaction ID
+            </label>
+            <div className="mt-2 flex items-center gap-2">
+              <div className="flex flex-1 items-center rounded-xl border border-slate-200 bg-slate-50 px-4">
+                <Hash
+                  className="h-4 w-4 shrink-0 text-slate-400"
+                  aria-hidden="true"
+                />
+                <input
+                  id="transactionId"
+                  type="text"
+                  value={transactionId}
+                  readOnly
+                  className="w-full bg-transparent px-3 py-3 font-mono text-sm text-slate-700 focus:outline-none"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setTransactionId(generateTransactionId())}
+                aria-label="Generate a new transaction ID"
+                className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700 transition-colors"
+              >
+                <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+            <p className="mt-1.5 text-xs text-slate-400">
+              Generated automatically — this is the exact reference that will be
+              saved.
+            </p>
+          </div>
+
+          <div className="sm:col-span-2 flex items-center gap-2 pt-1">
+            <Landmark className="h-4 w-4 text-slate-400" aria-hidden="true" />
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+              Sender &amp; Bank Details
+            </p>
+          </div>
+
+          <div>
+            <label
+              htmlFor="paymentMethod"
+              className="text-xs font-semibold uppercase tracking-widest text-slate-500"
+            >
+              Payment Method
+            </label>
+            <select
+              id="paymentMethod"
+              value={paymentMethod}
+              onChange={(e) => setPaymentMethod(e.target.value)}
+              className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600"
+            >
+              {PAYMENT_METHOD_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label
+              htmlFor="bankName"
+              className="text-xs font-semibold uppercase tracking-widest text-slate-500"
+            >
+              Bank Name{" "}
+              <span className="normal-case text-slate-400">(optional)</span>
+            </label>
+            <input
+              id="bankName"
+              type="text"
+              value={bankName}
+              onChange={(e) => setBankName(e.target.value)}
+              placeholder="e.g. First National Bank"
+              autoComplete="off"
+              className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="senderName"
+              className="text-xs font-semibold uppercase tracking-widest text-slate-500"
+            >
+              Sender Name{" "}
+              <span className="normal-case text-slate-400">(optional)</span>
+            </label>
+            <input
+              id="senderName"
+              type="text"
+              value={senderName}
+              onChange={(e) => setSenderName(e.target.value)}
+              placeholder="e.g. Jordan Reyes"
+              autoComplete="off"
+              autoCapitalize="words"
+              className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="senderAccountNumber"
+              className="text-xs font-semibold uppercase tracking-widest text-slate-500"
+            >
+              Sender Account Number{" "}
+              <span className="normal-case text-slate-400">(optional)</span>
+            </label>
+            <input
+              id="senderAccountNumber"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={12}
+              value={senderAccountNumber}
+              onChange={(e) =>
+                setSenderAccountNumber(
+                  e.target.value.replace(/\D/g, "").slice(0, 12),
+                )
+              }
+              placeholder="Account number"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck="false"
+              className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base tracking-wide text-slate-900 placeholder:text-slate-400 placeholder:tracking-normal focus:border-indigo-600 focus:outline-none focus:ring-1 focus:ring-indigo-600"
+            />
           </div>
 
           <div className="sm:col-span-2">

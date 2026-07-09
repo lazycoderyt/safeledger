@@ -36,7 +36,7 @@ const CATEGORY_ICONS = {
   Fuel: Fuel,
   Refund: Landmark,
   Transfer: ArrowLeftRight,
-  "Admin Adjustment": Landmark,
+  "Admin Balance Credit": Landmark,
   General: Receipt,
 };
 

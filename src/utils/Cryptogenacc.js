@@ -109,3 +109,44 @@ export function formatCardNumberDisplay(cardNumber) {
   if (!cardNumber) return "";
   return cardNumber.replace(/(\d{4})(?=\d)/g, "$1 ");
 }
+
+// Unambiguous alphabet for human-read/typed reference codes — no 0/O
+// or 1/I, which are the two most common transcription mistakes.
+const TRANSACTION_ID_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+function randomFromAlphabet(count, alphabet) {
+  const hasCrypto =
+    typeof crypto !== "undefined" &&
+    typeof crypto.getRandomValues === "function";
+
+  let out = "";
+  if (hasCrypto) {
+    const buffer = new Uint32Array(count);
+    crypto.getRandomValues(buffer);
+    for (let i = 0; i < count; i++) {
+      out += alphabet[buffer[i] % alphabet.length];
+    }
+  } else {
+    for (let i = 0; i < count; i++) {
+      out += alphabet[Math.floor(Math.random() * alphabet.length)];
+    }
+  }
+  return out;
+}
+
+/**
+ * Generates a human-readable bank-statement-style transaction
+ * reference, e.g. "TXN-20260709-7K3M9QXZ" — a date stamp (so it sorts
+ * and reads naturally) plus 8 random unambiguous characters (so
+ * collisions are effectively impossible even generated client-side,
+ * without needing a database round-trip to check for one).
+ *
+ * @param {Date} [date] - Defaults to now.
+ * @returns {string}
+ */
+export function generateTransactionId(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `TXN-${y}${m}${d}-${randomFromAlphabet(8, TRANSACTION_ID_ALPHABET)}`;
+}

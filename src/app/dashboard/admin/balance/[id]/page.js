@@ -84,7 +84,7 @@ export default function AdminUserBalancePage() {
         type,
         amount: numericAmount,
         description: description.trim(),
-        category: "Admin Adjustment",
+        category: "Admin Balance Credit",
         status: "Completed",
       });
       setAmount("");

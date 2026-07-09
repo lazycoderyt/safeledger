@@ -116,7 +116,7 @@ export default function UserDashboardPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-8 bg-white p-6 sm:p-8">
       <BalanceCard account={account} />
-      <TaxRefundBanner />
+
       <QuickActions />
       <RecentTransactions userId={user?.uid} />
     </div>

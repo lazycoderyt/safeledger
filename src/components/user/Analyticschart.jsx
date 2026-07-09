@@ -44,7 +44,9 @@ export function CategoryBreakdownChart({ categories, grandTotal }) {
           <div key={item.category}>
             <div className="flex items-baseline justify-between text-sm">
               <span className="font-medium text-slate-700">
-                {item.category}
+                {item.category === "Admin Adjustment"
+                  ? "Credits"
+                  : item.category}
               </span>
               <span className="font-mono text-xs text-slate-500">
                 {formatCurrency(item.total)} · {percent}%

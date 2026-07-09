@@ -45,7 +45,7 @@ const CATEGORY_OPTIONS = [
   "Fuel",
   "Refund",
   "Transfer",
-  "Admin Adjustment",
+  "Admin Balance Credit",
 ];
 
 const STATUS_OPTIONS = ["Completed", "Pending", "Failed", "Rejected"];
@@ -532,6 +532,71 @@ export default function AdminTransactionEditPage() {
         </>
       ) : (
         <>
+          {(transaction.transactionId ||
+            transaction.bankName ||
+            transaction.senderName ||
+            transaction.senderAccountNumber ||
+            transaction.paymentMethod) && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-5 sm:p-6">
+              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400">
+                <Landmark className="h-3.5 w-3.5" aria-hidden="true" />
+                Reference Details
+              </p>
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {transaction.transactionId && (
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+                      Transaction ID
+                    </p>
+                    <p className="mt-0.5 font-mono text-sm text-slate-800">
+                      {transaction.transactionId}
+                    </p>
+                  </div>
+                )}
+                {transaction.paymentMethod && (
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+                      Payment Method
+                    </p>
+                    <p className="mt-0.5 text-sm text-slate-800">
+                      {transaction.paymentMethod}
+                    </p>
+                  </div>
+                )}
+                {transaction.bankName && (
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+                      Bank Name
+                    </p>
+                    <p className="mt-0.5 text-sm text-slate-800">
+                      {transaction.bankName}
+                    </p>
+                  </div>
+                )}
+                {transaction.senderName && (
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+                      Sender Name
+                    </p>
+                    <p className="mt-0.5 text-sm text-slate-800">
+                      {transaction.senderName}
+                    </p>
+                  </div>
+                )}
+                {transaction.senderAccountNumber && (
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+                      Sender Account
+                    </p>
+                    <p className="mt-0.5 font-mono text-sm text-slate-800">
+                      ••••{transaction.senderAccountNumber.slice(-4)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {saveError && (
             <Banner tone="error" icon={AlertCircle}>
               {saveError}
