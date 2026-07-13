@@ -26,6 +26,7 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { formatAccountNumberDisplay } from "@/utils/Cryptogenacc";
 import { useChatThreadMeta } from "@/utils/useChatThreadMeta";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
 
 /**
  * components/user/Navbar.jsx
@@ -165,13 +166,7 @@ function getInitials(name) {
 /* ------------------------------------------------------------------ */
 /* Shared nav link — active state gets the left-border accent treatment */
 /* ------------------------------------------------------------------ */
-function NavLink({
-  item,
-  pathname,
-  onNavigate,
-  indent = false,
-  badgeCount = 0,
-}) {
+function NavLink({ item, pathname, onNavigate, indent = false, badgeCount = 0 }) {
   const Icon = item.icon;
   const active = pathname === item.href;
   return (
@@ -487,7 +482,10 @@ export default function Navbar() {
           </button>
           <BrandMark />
         </div>
-        <NotificationBell />
+        <div className="flex items-center gap-2">
+          <LanguageSwitcher />
+          <NotificationBell />
+        </div>
       </header>
 
       {/* ---------------- Mobile drawer + backdrop ---------------- */}
@@ -536,7 +534,10 @@ export default function Navbar() {
       <aside className="print:hidden hidden md:flex md:fixed md:inset-y-0 md:left-0 md:z-20 md:w-64 md:flex-col bg-white border-r border-slate-200">
         <div className="flex h-16 items-center justify-between px-5 border-b border-slate-200">
           <BrandMark />
-          <NotificationBell />
+          <div className="flex items-center gap-2">
+            <LanguageSwitcher />
+            <NotificationBell />
+          </div>
         </div>
 
         <NavContent

@@ -24,3 +24,40 @@ body {
     color: var(--foreground);
     font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ---------------------------------------------------------------- */
+/* Google Translate widget cleanup                                   */
+/* ---------------------------------------------------------------- */
+/* The widget that powers components/LanguageSwitcher.jsx injects its
+   own UI into the page: a top banner iframe, a small gadget/dropdown,
+   and a yellow highlight box behind whatever text it's actively
+   translating. We keep the translation itself but hide every bit of
+   Google's own chrome, since LanguageSwitcher renders its own trigger
+   and dropdown instead. Google's script also force-sets `body { top:
+   40px }` while its banner is shown (even though we hide the banner)
+   — reset that back to 0 so the page never shifts down. */
+#google_translate_element,
+.goog-te-banner-frame,
+.goog-te-gadget-icon,
+.goog-te-menu-value,
+.goog-logo-link {
+    display: none !important;
+}
+
+body {
+    top: 0px !important;
+}
+
+.goog-text-highlight {
+    background: none !important;
+    box-shadow: none !important;
+}
+
+/* The "Powered by Google" translate gadget footer, and the full-page
+   loading spinner overlay the widget briefly shows while translating
+   — both are Google's own UI, not something users need to see given
+   our own dropdown already shows switching state. */
+.goog-te-spinner-pos,
+iframe.goog-te-menu-frame {
+    display: none !important;
+}
