@@ -8,8 +8,14 @@ import {
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
 } from "firebase/auth";
-import {
+
+
+
+
+/*import {
   doc,
   getDoc,
   setDoc,
@@ -21,7 +27,30 @@ import {
   runTransaction,
   Timestamp,
   increment,
+} from "firebase/firestore"; */
+
+
+
+
+import {
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  addDoc,
+  deleteDoc,
+  getDocs,
+  query,
+  limit,
+  serverTimestamp,
+  writeBatch,
+  collection,
+  runTransaction,
+  Timestamp,
+  increment,
 } from "firebase/firestore";
+
+
 import { auth, db } from "@/libs/firebase";
 import {
   generateUSAccountNumber,
@@ -1584,6 +1613,120 @@ export async function markChatThreadRead(userId, role) {
 
   const field = role === "admin" ? "unreadByAdmin" : "unreadByUser";
   await setDoc(doc(db, "chats", userId), { [field]: 0 }, { merge: true });
+
+
+}
+
+
+/**
+ * Admin action: permanently deletes a user's entire support thread
+ * (`chats/{userId}` and every message in its `messages` subcollection).
+ * Because the member and the admin read the same shared thread, this
+ * removes the conversation for both sides.
+ *
+ * Firestore doesn't cascade-delete subcollections, so messages are
+ * removed first in batches (well under the 500-write batch limit), and
+ * the parent document goes last. If it fails partway, the parent still
+ * exists and the delete can simply be retried.
+ *
+ * @param {string} userId
+ * @returns {Promise<void>}
+ */
+export async function deleteChatThread(userId) {
+  if (!userId) throw new Error("deleteChatThread requires a userId.");
+
+  const messagesRef = collection(db, "chats", userId, "messages");
+
+  for (;;) {
+    const snap = await getDocs(query(messagesRef, limit(400)));
+    if (snap.empty) break;
+    const batch = writeBatch(db);
+    snap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
+
+  await deleteDoc(doc(db, "chats", userId));
+
+}
+
+
+
+/**
+ * ---------------------------------------------------------------------
+ * 1) Update the firebase/auth import at the top of authHelper.js
+ * ---------------------------------------------------------------------
+ */
+
+
+
+
+
+/**
+ * ---------------------------------------------------------------------
+ * 2) Add this function anywhere below verifyTransferPin()
+ *    (hashTransferPin is private to authHelper, so this must live here)
+ * ---------------------------------------------------------------------
+ */
+
+/**
+ * Resets a forgotten transfer PIN. The old PIN is never needed — instead
+ * the user must prove it's really them by re-entering their account
+ * password (Firebase re-authentication), after which the new PIN's
+ * salted hash replaces `transferPinHash` on their profile.
+ *
+ * Also works for accounts created before transfer PINs existed (no
+ * `transferPinHash` yet), letting them set one for the first time.
+ *
+ * Throws with a message safe to show directly in the UI.
+ *
+ * @param {string} currentPassword - The user's account password.
+ * @param {string} newPin - The new 4-digit PIN.
+ * @returns {Promise<void>}
+ */
+export async function resetTransferPin(currentPassword, newPin) {
+  const user = auth.currentUser;
+  if (!user || !user.email) {
+    throw new Error("You need to be signed in to do this.");
+  }
+  if (!currentPassword) {
+    throw new Error("Enter your account password to confirm it's you.");
+  }
+  if (!/^\d{4}$/.test(newPin || "")) {
+    throw new Error("Enter a 4-digit transfer PIN.");
+  }
+  if (/^(\d)\1{3}$/.test(newPin)) {
+    throw new Error(
+      "Choose a less predictable PIN — repeated digits like 1111 aren't allowed.",
+    );
+  }
+
+  try {
+    await reauthenticateWithCredential(
+      user,
+      EmailAuthProvider.credential(user.email, currentPassword),
+    );
+  } catch (err) {
+    const code = err?.code || "";
+    if (
+      code === "auth/wrong-password" ||
+      code === "auth/invalid-credential" ||
+      code === "auth/invalid-login-credentials"
+    ) {
+      throw new Error("That password is incorrect.");
+    }
+    if (code === "auth/too-many-requests") {
+      throw new Error("Too many attempts. Please wait a few minutes and try again.");
+    }
+    throw new Error("We couldn't verify your password. Please try again.");
+  }
+
+  const transferPinHash = await hashTransferPin(user.uid, newPin);
+
+  await updateDoc(doc(db, "profiles", user.uid), {
+    transferPinHash,
+    transferPinUpdatedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export { CHAT_MESSAGE_MAX_LENGTH };

@@ -2,18 +2,23 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Send,
   Loader2,
   AlertCircle,
   MessageCircle,
+  Trash2,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useChatMessages } from "@/utils/useChatMessages";
 import { useChatThreadMeta } from "@/utils/useChatThreadMeta";
-import { sendChatMessage, markChatThreadRead } from "@/utils/authHelper";
+import {
+  sendChatMessage,
+  markChatThreadRead,
+  deleteChatThread,
+} from "@/utils/authHelper";
 
 /**
  * app/dashboard/admin/messages/[id]/page.js
@@ -21,6 +26,9 @@ import { sendChatMessage, markChatThreadRead } from "@/utils/authHelper";
  * normal-document-flow composer approach as the member's page (see
  * that file's header comment) so the on-screen keyboard behaves
  * correctly on both iOS and Android here too.
+ *
+ * Admins can delete the whole conversation. Because the member and the
+ * admin read the same thread, deleting it removes it for both sides.
  */
 
 const MAX_MESSAGE_LENGTH = 2000;
@@ -92,6 +100,7 @@ function MessageBubble({ message }) {
 
 export default function AdminChatThreadPage() {
   const params = useParams();
+  const router = useRouter();
   const userId = params?.id;
   const { user: currentAdmin } = useAuth();
 
@@ -102,19 +111,24 @@ export default function AdminChatThreadPage() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
 
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   const textareaRef = useRef(null);
   const scrollBottomRef = useRef(null);
 
   // Mark read on open, and keep clearing it for as long as this thread
-  // stays open and new member messages keep arriving.
+  // stays open and new member messages keep arriving. Skipped while a
+  // delete is in flight so we don't recreate a doc that's being removed.
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || deleting) return;
     if ((thread?.unreadByAdmin || 0) > 0) {
       markChatThreadRead(userId, "admin").catch((err) =>
         console.error("Failed to mark thread read:", err),
       );
     }
-  }, [userId, thread?.unreadByAdmin]);
+  }, [userId, thread?.unreadByAdmin, deleting]);
 
   useEffect(() => {
     scrollBottomRef.current?.scrollIntoView({ block: "end" });
@@ -130,7 +144,8 @@ export default function AdminChatThreadPage() {
   async function handleSend(e) {
     e?.preventDefault();
     const trimmed = text.trim();
-    if (!trimmed || sending || !userId || !currentAdmin?.uid) return;
+    if (!trimmed || sending || deleting || !userId || !currentAdmin?.uid)
+      return;
 
     setSending(true);
     setSendError("");
@@ -150,6 +165,22 @@ export default function AdminChatThreadPage() {
       );
     } finally {
       setSending(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!userId || deleting) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await deleteChatThread(userId);
+      router.replace("/dashboard/admin/messages");
+    } catch (err) {
+      console.error("Failed to delete conversation:", err);
+      setDeleteError(
+        err.message || "Couldn't delete this conversation. Please try again.",
+      );
+      setDeleting(false);
     }
   }
 
@@ -177,7 +208,7 @@ export default function AdminChatThreadPage() {
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 text-sm font-semibold text-indigo-700">
             {getInitials(thread?.userName)}
           </span>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="truncate text-base font-bold text-slate-900">
               {threadLoading ? "Loading…" : thread?.userName || "Unknown User"}
             </p>
@@ -185,7 +216,62 @@ export default function AdminChatThreadPage() {
               {thread?.userEmail || "—"}
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => setConfirmingDelete(true)}
+            disabled={deleting || messagesLoading || messages.length === 0}
+            aria-label="Delete conversation"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
+
+        {confirmingDelete && (
+          <div
+            role="alertdialog"
+            aria-labelledby="deleteTitle"
+            className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3"
+          >
+            <p id="deleteTitle" className="text-sm font-semibold text-rose-800">
+              Delete this entire conversation?
+            </p>
+            <p className="mt-0.5 text-xs text-rose-700">
+              This permanently removes it for you and for the member. It cant
+              be undone.
+            </p>
+            {deleteError && (
+              <p className="mt-2 text-xs text-rose-700">{deleteError}</p>
+            )}
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+              >
+                {deleting && (
+                  <Loader2
+                    className="h-3.5 w-3.5 animate-spin"
+                    aria-hidden="true"
+                  />
+                )}
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmingDelete(false);
+                  setDeleteError("");
+                }}
+                disabled={deleting}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 shadow-sm">
@@ -234,7 +320,7 @@ export default function AdminChatThreadPage() {
               className="mb-2 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"
             >
               <AlertCircle
-                className="h-3.5 w-3.5 shrink-0 mt-0.5"
+                className="mt-0.5 h-3.5 w-3.5 shrink-0"
                 aria-hidden="true"
               />
               {sendError}
@@ -260,23 +346,23 @@ export default function AdminChatThreadPage() {
               autoCorrect="on"
               autoCapitalize="sentences"
               spellCheck="true"
-              disabled={sending}
+              disabled={sending || deleting}
               maxLength={MAX_MESSAGE_LENGTH}
               className="max-h-[120px] min-h-[44px] flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-indigo-600 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-600 disabled:opacity-60"
             />
             <button
               type="submit"
-              disabled={sending || !text.trim()}
+              disabled={sending || deleting || !text.trim()}
               aria-label="Send reply"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {sending ? (
                 <Loader2
-                  className="h-4.5 w-4.5 animate-spin"
+                  className="h-[18px] w-[18px] animate-spin"
                   aria-hidden="true"
                 />
               ) : (
-                <Send className="h-4.5 w-4.5" aria-hidden="true" />
+                <Send className="h-[18px] w-[18px]" aria-hidden="true" />
               )}
             </button>
           </form>
